@@ -10,10 +10,8 @@ import numpy as np
 
 class VideoCapturer:
     def __init__(self, video, cache_path):
-        super(VideoCapturer, self).__init__()
         self.video = cv2.VideoCapture(video)
         self.playing = True
-        self.fps = None
         self.frame_weight = int(self.video.get(cv2.CAP_PROP_FRAME_WIDTH))  # 3 is cv2.CAP_PROP_FRAME_WIDTH
         self.frame_height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))  # 4 is cv2.CAP_PROP_FRAME_HEIGHT
         self.frame_count = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))  # 7 is cv2.CAP_PROP_FRAME_COUNT
@@ -22,16 +20,45 @@ class VideoCapturer:
         self.frame_no = 0
 
     def captureFrame(self, pos=-1):
+        # print("hey", self.video.get(cv2.CAP_PROP_POS_FRAMES))
         #print(pos)
-        if pos == -1:
-            self.frame_no += 1
-        else:
-            self.frame_no = pos
-            self.video.set(cv2.CAP_PROP_POS_FRAMES, self.frame_no)
-        success, image = self.video.read()
-        if success:
-            data = cv2.imencode('.jpg', image)[1].tobytes()
-            return data, self.frame_no
+        # if pos == -1:
+        #     self.frame_no += 1
+        # else:
+        #     if pos == 0:
+        #         pos = 1
+        #     if pos > self.frame_count:
+        #         return None, None
+        #     self.frame_no = pos
+        #     self.video.set(cv2.CAP_PROP_POS_FRAMES, self.frame_no)
+        # if self.frame_no > self.frame_count:
+        #     self.frame_no = self.frame_count
+        #     return None, None
+        try:
+            if pos != -1:
+                if pos >= self.frame_count:
+                    return '', -1
+                self.frame_no = pos
+                self.video.set(cv2.CAP_PROP_POS_FRAMES, self.frame_no)
+            if self.frame_no >= self.frame_count:
+                # self.frame_no = self.frame_count - 1
+                return '', -1
+
+            success, image = self.video.read()
+            if success:
+
+                self.frame_no += 1
+                data = cv2.imencode('.jpg', image)[1].tobytes()
+                return data, self.frame_no - 1
+            else:
+                print("fail, why", self.frame_no)
+                return '', -1
+        except Exception as e:
+            print("error", str(e))
+
+    def releaseVideo(self):
+        print("released")
+        self.video.release()
 
 
 class FrameExtractor(QThread):

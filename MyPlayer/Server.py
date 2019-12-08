@@ -3,20 +3,29 @@ from RtpPacket import RtpPacket
 import time
 import threading, traceback, sys
 from extract_frame import FrameExtractor, VideoCapturer
+from audio_player import AudioCapturer
+import ctypes
+from ctypes import wintypes
 
+winmm = ctypes.WinDLL('winmm')
+winmm.timeBeginPeriod(1)
 
 class Server:
-    def __init__(self, rtsp_port, rtp_port, src_folder):
+    def __init__(self, rtsp_port, rtp_port, plp_port, src_folder):
         self.rtsp_port = int(rtsp_port)
         self.rtp_port = int(rtp_port)
+        self.plp_port = int(plp_port)
         self.src_folder = src_folder
         self.rtp_socket = None
+        self.plp_socket = None
         self.clients = [None] * 100  # stores the client info
         self.max_jpg_num = 182
         self.openRtp()  # open rtp port
         threading.Thread(target=self.openRtsp).start()  # start listening for rtsp connections
+        threading.Thread(target=self.openPlp).start()
         self.vacancy = list(range(99, 0, -1))
         self.sessionPool = list(range(99, 0, -1))  # distributes session id
+        self.play_list = ['test.mp4', 'hires.mp4']
 
     # open rtp port
     def openRtp(self):
@@ -30,6 +39,38 @@ class Server:
             self.rtp_socket.bind(("", self.rtp_port))
         except:
             print('Unable to Bind', 'Unable to bind PORT=%d' % self.rtp_port)
+
+    def openPlp(self):
+        self.plp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        try:
+            # Bind the socket to the address using the RTP port given by the server user
+            self.plp_socket.bind(("", self.plp_port))
+        except:
+            print('Unable to Bind', 'Unable to bind PORT=%d' % self.plp_port)
+        while True:
+            try:
+
+                query, addr = self.plp_socket.recvfrom(8192)
+                print("today")
+                data = query.decode()
+                if data == 'LIST':
+
+                    response = '\n'.join(self.play_list)
+                    self.plp_socket.sendto(response.encode('utf-8'), addr)
+                elif data.split(' ')[0] == 'SEARCH':
+                    keyword = data.split(' ')[1]
+                    res = []
+                    for movie in self.play_list:
+                        if keyword in movie.split('.')[0]:
+                            res.append(movie)
+                    response = '\n'.join(res)
+                    self.plp_socket.sendto(response.encode('utf-8'), addr)
+
+            except:
+                break
+
+
 
     # open rtsp port and start listening
     def openRtsp(self):
@@ -61,9 +102,14 @@ class Server:
                     self.parseRtspRequest(request.decode("utf-8"), i)
             except:
                 break
+        print("got out of rtsp thread")
 
     def setupVideoCapture(self, i):
-        self.clients[i]['extractor'] = VideoCapturer("test.mp4", "cache.jpg")
+        self.clients[i]['extractor'] = VideoCapturer(self.clients[i]['movie_name'], "cache.jpg")
+        video_extractor = self.clients[i]['extractor']
+        fps = video_extractor.fps
+        frame_count = video_extractor.frame_count
+        self.clients[i]['audio_extractor'] = AudioCapturer(self.clients[i]['movie_name'], fps, frame_count, '')
         pass
 
     def sendRtp(self, i):
@@ -81,19 +127,31 @@ class Server:
                     # print(start_pos)
                     if start_pos is not None:
                         data, frame_no = self.clients[i]['extractor'].captureFrame(start_pos)
+                        audio_data, audio_frame_no = self.clients[i]['audio_extractor'].captureFrame(start_pos)
                         print("here",start_pos)
                         self.clients[i]['start_pos'] = None
                     else:
                         data, frame_no = self.clients[i]['extractor'].captureFrame()
-                    print(frame_no)
-                    rtpPacket = RtpPacket()
-                    rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 0, 0, data)
-                    self.sendPacket(rtpPacket, i)
-                    #time.sleep(0.01)  # wait for 0.25 second
-                    self.clients[i]['frame_num'] = frame_no + 1
+                        audio_data, audio_frame_no = self.clients[i]['audio_extractor'].captureFrame()
+                    if frame_no != -1:
+                        print(frame_no, len(data))
+                        rtpPacket = RtpPacket()
+                        rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, data)
+                        self.sendPacket(rtpPacket, i)
+                        time.sleep(0.005)  # wait for 0.01 second
+                        audio_packet = RtpPacket()
+
+                        audio_packet.encode(2, 0, 0, 0, audio_frame_no, 0, 10, 0, audio_data)
+
+                        self.sendPacket(audio_packet, i)
+                        time.sleep(0.005)  # wait for 0.01 second
+                        self.clients[i]['frame_num'] = frame_no + 1
                 except Exception as e:
                     print(str(e))
                     break
+            elif self.clients[i]['extractor'] is None:
+                break
+        print("got out of rtp thread")
 
     # send an rtp packet
     def sendPacket(self, data, i):
@@ -110,7 +168,7 @@ class Server:
         if rtspSeq == self.clients[i]['seq']:
             self.clients[i]['seq'] += 1
             if cmd == 'SETUP':
-
+                self.clients[i]['movie_name'] = lines[0].split(' ')[1]
                 rtpDestPort = int(lines[2].split(' ')[-1])
                 self.clients[i]['rtp_port'] = rtpDestPort
                 session = self.sessionPool.pop()
@@ -178,6 +236,11 @@ class Server:
                 self.clients[i]['socket'].send(reply.encode())
                 self.clients[i]['socket'].shutdown(socket.SHUT_RDWR)
                 self.clients[i]['socket'].close()
+                self.clients[i]['extractor'].releaseVideo()
+                self.clients[i]['extractor'] = None
+                self.clients[i]['rtp_port'].shutdown(socket.SHUT_RDWR)
+                self.clients[i]['rtp_port'].close()
+
                 self.sessionPool.append(self.clients[i]['session'])
                 self.vacancy.append(i)
                 # self.clients = self.clients[:i] + self.clients[i+1:]
@@ -189,4 +252,4 @@ class Server:
 
 
 if __name__ == "__main__":
-    server = Server(10001, 22222, '.')
+    server = Server(10001, 22222, 22233, '.')

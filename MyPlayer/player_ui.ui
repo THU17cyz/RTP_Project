@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>821</width>
-    <height>692</height>
+    <width>1200</width>
+    <height>722</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,8 +18,8 @@
     <rect>
      <x>10</x>
      <y>10</y>
-     <width>800</width>
-     <height>600</height>
+     <width>840</width>
+     <height>630</height>
     </rect>
    </property>
    <property name="text">
@@ -43,9 +43,9 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>620</y>
-     <width>791</width>
-     <height>22</height>
+     <y>650</y>
+     <width>840</width>
+     <height>20</height>
     </rect>
    </property>
    <property name="orientation">
@@ -56,8 +56,8 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>649</y>
-     <width>801</width>
+     <y>680</y>
+     <width>841</width>
      <height>31</height>
     </rect>
    </property>
@@ -67,24 +67,33 @@
     </property>
     <item>
      <widget class="QPushButton" name="FullScreenBtn">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
       <property name="text">
-       <string>Fullscreen</string>
+       <string/>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QPushButton" name="PlayBtn">
       <property name="text">
-       <string>Play</string>
+       <string/>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QPushButton" name="PauseBtn">
       <property name="text">
-       <string>Pause</string>
+       <string/>
       </property>
      </widget>
+    </item>
+    <item>
+     <widget class="QComboBox" name="PlaySpeedBox"/>
     </item>
    </layout>
   </widget>
@@ -99,6 +108,16 @@
    </property>
    <property name="text">
     <string/>
+   </property>
+  </widget>
+  <widget class="QListWidget" name="PlayList">
+   <property name="geometry">
+    <rect>
+     <x>870</x>
+     <y>10</y>
+     <width>311</width>
+     <height>691</height>
+    </rect>
    </property>
   </widget>
  </widget>

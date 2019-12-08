@@ -24,26 +24,47 @@ class Client:
     DESCRIBE = 4
 
     # Initiation..
-    def __init__(self, serveraddr, serverport, rtpport, filename):
+    def __init__(self, serveraddr, serverport, server_plp_port, rtpport, plp_port, movie_name):
         self.serverAddr = serveraddr
         self.serverPort = int(serverport)
+        self.server_plp_port = int(server_plp_port)
         self.rtpPort = int(rtpport)
-        self.fileName = filename
+        self.plp_port = int(plp_port)
+        self.movie_name = movie_name
         self.rtspSeq = 0
         self.sessionId = 0
         self.requestSent = -1
         self.teardownAcked = 0
         self.connectToServer()
-        self.setupMovie()
+        self.setupMovie(movie_name)
 
         self.frameNbr = 0
         self.video_frame_count = 0
         self.video_fps = 0
+        self.time_delay = 0
+        self.modified_time_delay = 0
 
-    def setupMovie(self):
+    def retrievePlayList(self, keyword=''):
+        plp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        plp_socket.settimeout(1)
+        plp_socket.bind(("", self.plp_port))
+        addr = (self.serverAddr, self.server_plp_port)
+        if keyword == '':
+            plp_socket.sendto('LIST'.encode('utf-8'), addr)
+        else:
+            cmd = 'SEARCH ' + keyword
+            plp_socket.sendto(cmd.encode('utf-8'), addr)
+        response, addr = plp_socket.recvfrom(8192)
+        play_list = response.decode().split('\n')
+        plp_socket.close()
+        return play_list
+
+
+    def setupMovie(self, movie_name):
         """Setup button handler."""
         if self.state == self.INIT:
-            self.sendRtspRequest(self.SETUP)
+            self.movie_name = movie_name
+            self.sendRtspRequest(self.SETUP, movie_name)
 
 
     def exitAttempt(self):
@@ -85,7 +106,7 @@ class Client:
         """Listen for RTP packets."""
         while True:
             try:
-                data = self.rtpSocket.recv(40960)
+                data = self.rtpSocket.recv(80000)
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
@@ -94,7 +115,10 @@ class Client:
                     #print("Current Seq Num: " + str(currFrameNbr))
                     #if currFrameNbr > self.frameNbr: # Discard the late packet
                     # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
-                    self.collectFrame(rtpPacket.getPayload(), self.frameNbr)
+                    if rtpPacket.payloadType() == 26:
+                        self.collectFrame(rtpPacket.getPayload(), self.frameNbr)
+                    elif rtpPacket.payloadType() == 10:
+                        self.collectAudioFrame(rtpPacket.getPayload(), self.frameNbr)
 
             except:
                 # Stop listening upon requesting PAUSE or TEARDOWN
@@ -118,6 +142,9 @@ class Client:
         return cachename
 
     def collectFrame(self, image):
+        pass
+
+    def collectAudioFrame(self, sound):
         pass
 
     def updateMovie(self):
@@ -146,7 +173,7 @@ class Client:
             self.rtspSeq += 1
 
             # Write the RTSP request to be sent.
-            request = 'SETUP ' + self.fileName + ' RTSP/1.0\n' + \
+            request = 'SETUP ' + args[0] + ' RTSP/1.0\n' + \
             'CSeq: ' + str(self.rtspSeq) + '\n' + \
             'Transport: RTP/UDP; client_port= ' + str(self.rtpPort)
             print(request)
@@ -158,7 +185,7 @@ class Client:
             self.rtspSeq += 1
 
             # Write the RTSP request to be sent.
-            request = 'DESCRIBE ' + self.fileName + ' RTSP/1.0\n' + \
+            request = 'DESCRIBE ' + args[0] + ' RTSP/1.0\n' + \
                       'CSeq: ' + str(self.rtspSeq) + '\n' + \
                       'Session: ' + str(self.sessionId) + '\n' + \
                       'Accept: application/myformat'
@@ -174,7 +201,7 @@ class Client:
 
             if len(args) != 0:
                 range_info = '\nRange: npt = '+str(args[0])+' -'
-            request = 'PLAY ' + self.fileName + ' RTSP/1.0\n' + \
+            request = 'PLAY ' + self.movie_name + ' RTSP/1.0\n' + \
                       'CSeq: ' + str(self.rtspSeq) + '\n' + \
                       'Session: ' + str(self.sessionId) + range_info
 
@@ -183,7 +210,7 @@ class Client:
         # Pause request
         elif requestCode == self.PAUSE and self.state == self.PLAYING:
             self.rtspSeq += 1
-            request = 'PAUSE ' + self.fileName + ' RTSP/1.0\n' + \
+            request = 'PAUSE ' + self.movie_name + ' RTSP/1.0\n' + \
                       'CSeq: ' + str(self.rtspSeq) + '\n' + \
                       'Session: ' + str(self.sessionId)
 
@@ -192,7 +219,7 @@ class Client:
         # Teardown request
         elif requestCode == self.TEARDOWN and not self.state == self.INIT:
             self.rtspSeq += 1
-            request = 'TEARDOWN ' + self.fileName + ' RTSP/1.0\n' + \
+            request = 'TEARDOWN ' + self.movie_name + ' RTSP/1.0\n' + \
                       'CSeq: ' + str(self.rtspSeq) + '\n' + \
                       'Session: ' + str(self.sessionId)
 
@@ -208,15 +235,23 @@ class Client:
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
         while True:
-            reply = self.rtspSocket.recv(1024)
+            try:
+                reply = self.rtspSocket.recv(1024)
 
-            if reply:
-                self.parseRtspReply(reply.decode("utf-8"))
+                if reply:
+                    self.parseRtspReply(reply.decode("utf-8"))
 
-            # Close the RTSP socket upon requesting Teardown
-            if self.requestSent == self.TEARDOWN:
+                # Close the RTSP socket upon requesting Teardown
+                if self.requestSent == self.TEARDOWN:
+                    self.rtspSocket.shutdown(socket.SHUT_RDWR)
+                    self.rtspSocket.close()
+                    break
+            except:
                 self.rtspSocket.shutdown(socket.SHUT_RDWR)
                 self.rtspSocket.close()
+                self.rtpSocket.shutdown(socket.SHUT_RDWR)
+                self.rtpSocket.close()
+                self.teardownAcked = 1
                 break
 
     def parseRtspReply(self, data):
@@ -237,12 +272,14 @@ class Client:
                     if self.requestSent == self.SETUP:
                         # Update RTSP state.
                         self.state = self.READY
-                        self.sendRtspRequest(self.DESCRIBE)
+                        self.sendRtspRequest(self.DESCRIBE, self.movie_name)
                         # Open RTP port.
                         self.openRtpPort()
                     elif self.requestSent == self.DESCRIBE:
                         self.video_frame_count = int(lines[3].split('=')[-1])
                         self.video_fps = int(lines[4].split('=')[-1])
+                        self.time_delay = round(1 / self.video_fps, 3)
+                        self.modified_time_delay = self.time_delay
                     elif self.requestSent == self.PLAY:
                         self.state = self.PLAYING
                     elif self.requestSent == self.PAUSE:
