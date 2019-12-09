@@ -2,7 +2,7 @@ import socket
 from RtpPacket import RtpPacket
 import time
 import threading
-from extract_frame import VideoCapturer
+from extract_frame import VideoCapturer, SubtitleExtractor
 from audio_player import AudioCapturer
 import ctypes
 
@@ -28,7 +28,11 @@ class Server:
         self.vacancy = list(range(99, 0, -1))
         self.sessionPool = list(range(99, 0, -1))  # distributes session id
 
+
         self.play_list = ['test.mp4', 'hires.mp4']  # all movies stored at the server
+        self.play2category = {'test.mp4': 'test1', 'hires.mp4': 'test2'}
+        self.category_list = ['test1', 'test2']
+        self.has_subtitle =  {'test.mp4': 'test.srt', 'hires.mp4': None}
 
     # open rtp port
     def openRtp(self):
@@ -55,12 +59,23 @@ class Server:
                 if data == 'LIST':
                     response = '\n'.join(self.play_list)
                     self.plp_socket.sendto(response.encode('utf-8'), addr)
+
+                # list all categories
+                elif data == 'CATEGORY':
+                    response = '\n'.join(self.category_list)
+                    self.plp_socket.sendto(response.encode('utf-8'), addr)
+
                 # list all movies with the cmd substring
                 elif data.split(' ')[0] == 'SEARCH':
+                    print(data)
                     keyword = data.split(' ')[1]
+                    category = data.split(' ')[2]
+                    all_category = False
+                    if category == '':
+                        all_category = True
                     res = []
                     for movie in self.play_list:
-                        if keyword in movie.split('.')[0]:
+                        if keyword in movie.split('.')[0] and (all_category or self.play2category[movie] == category):
                             res.append(movie)
                     response = '\n'.join(res)
                     self.plp_socket.sendto(response.encode('utf-8'), addr)
@@ -106,11 +121,14 @@ class Server:
                 break
 
     def setupMediaExtractor(self, i):
-        self.clients[i]['video_extractor'] = VideoCapturer(self.clients[i]['movie_name'])
+        movie_name = self.clients[i]['movie_name']
+        self.clients[i]['video_extractor'] = VideoCapturer(movie_name)
         video_extractor = self.clients[i]['video_extractor']
         fps = video_extractor.fps
         frame_count = video_extractor.frame_count
-        self.clients[i]['audio_extractor'] = AudioCapturer(self.clients[i]['movie_name'], fps, frame_count)
+        self.clients[i]['audio_extractor'] = AudioCapturer(movie_name, fps, frame_count)
+        if self.clients[i]['subtitle_file'] is not None:
+            self.clients[i]['subtitle_extractor'] = SubtitleExtractor(self.clients[i]['subtitle_file'])
 
     def sendRtp(self, i):
         while True:
@@ -132,18 +150,28 @@ class Server:
                     else:
                         data, frame_no = self.clients[i]['video_extractor'].captureFrame()
                         audio_data, audio_frame_no = self.clients[i]['audio_extractor'].captureFrame()
-                    if frame_no != -1:
-                        print(frame_no, len(data))
+                        if self.clients[i]['subtitle_file'] is not None:
+                            subtitle_data, subtitle_no = self.clients[i]['subtitle_extractor'].extractLine()
+                    if frame_no != -1 and audio_frame_no != -1:
+                        print(audio_frame_no, len(audio_data))
                         rtpPacket = RtpPacket()
                         rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, data)
                         self.sendPacket(rtpPacket, i)
-                        time.sleep(0.005)  # wait for 0.01 second
+                        time.sleep(0.01)  # wait for 0.01 second
                         audio_packet = RtpPacket()
 
                         audio_packet.encode(2, 0, 0, 0, audio_frame_no, 0, 10, 0, audio_data)
 
                         self.sendPacket(audio_packet, i)
-                        time.sleep(0.005)  # wait for 0.01 second
+                        time.sleep(0.01)  # wait for 0.01 second
+
+                        rtpPacket = RtpPacket()
+                        rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, data)
+
+                        if self.clients[i]['subtitle_file'] is not None:
+                            subtitle_packet = RtpPacket()
+                            subtitle_packet.encode(2, 0, 0, 0, subtitle_no, 0, 37, 0, subtitle_data)
+
                         self.clients[i]['frame_num'] = frame_no + 1
                 except Exception as e:
                     print(str(e))
@@ -168,6 +196,7 @@ class Server:
 
             if cmd == 'SETUP':
                 self.clients[i]['movie_name'] = src_folder + lines[0].split(' ')[1]
+                self.clients[i]['subtitle_file'] = self.has_subtitle[self.clients[i]['movie_name']]
                 rtpDestPort = int(lines[2].split(' ')[-1])
                 self.clients[i]['rtp_port'] = rtpDestPort
                 session = self.sessionPool.pop()

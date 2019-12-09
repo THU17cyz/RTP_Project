@@ -42,6 +42,29 @@ class VideoCapturer:
         print("Video released")
 
 
+class SubtitleExtractor:
+    def __init__(self, subtitle_file):
+        self.support_subtitle_ext = ['srt']
+        assert subtitle_file.split('.')[-1] in self.support_subtitle_ext
+        f = open(subtitle_file)
+        self.subtitle = f.read().split('\n')
+        f.close()
+        self.line_no = 0
+        self.subtitle_no = 0
+
+    def extractLine(self):
+        try:
+            while self.subtitle[self.line_no].strip() != str(self.subtitle_no):
+                self.line_no += 1
+        except IndexError:
+            return '', -1
+        data = ''
+        while self.subtitle[self.line_no].strip() != '':
+            data += self.subtitle[self.line_no]
+        self.subtitle_no += 1
+        return data.encode(), self.subtitle_no-1
+
+
 # class FrameExtractor(QThread):
 #     next_frame_signal = pyqtSignal(str)
 #

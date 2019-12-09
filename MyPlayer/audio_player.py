@@ -83,7 +83,7 @@ class AudioCapturer:
 
         start = int(self.frame_no * self.duration / self.frame_count)
         end = min(start + self.interval, self.duration - 1)
-        print(start, end)
+        # print(start, end)
         data = self.audio[start:end].raw_data
         self.frame_no += 1
         return data, self.frame_no - 1
@@ -103,13 +103,14 @@ def playSound(sound, frame_rate):
         # stereo
         channels=2
     )
+    return splice
     play(splice)
 
 
 if __name__ == "__main__":
     audiofile = "test.mp4"  # path to audiofile
-    start_ms = 0  # start of clip in milliseconds
-    end_ms = 20000  # end of clip in milliseconds
+    start_ms = 35000  # start of clip in milliseconds
+    end_ms = 40000  # end of clip in milliseconds
 
     sound = AudioSegment.from_file(audiofile, format="mp4")
     print(sound.duration_seconds)
@@ -117,9 +118,10 @@ if __name__ == "__main__":
     print(sound.frame_rate)
     print(sound.channels)
     splice = sound[start_ms:end_ms]
-    slow_sound = speed_change(sound, 0.5)
-    fast_sound = speed_change(sound, 2.0)
-    play(slow_sound)
+    splice = playSound(splice.raw_data, 44100)
+    slow_sound = speed_change(splice, 0.5)
+    fast_sound = speed_change(splice, 2.0)
+    play(fast_sound)
     # print(type(splice.raw_data))
 
     # sound = AudioSegment(
@@ -136,13 +138,13 @@ if __name__ == "__main__":
     #     channels=2
     # )
     # play(sound)
-    try:
-        hey = int(1000 * sound.duration_seconds)
-        print(hey)
-        splice = sound[hey - 1:hey]
-        play(splice)
-    except Exception as e:
-        print(str(e))
+    # try:
+    #     hey = int(1000 * sound.duration_seconds)
+    #     print(hey)
+    #     splice = sound[hey - 1:hey]
+    #     play(splice)
+    # except Exception as e:
+    #     print(str(e))
     #
     # splice.export("res.mp4", format="mp3")
     # play(splice)

@@ -54,19 +54,24 @@ class Client:
         self.connectToServer()
         # self.setupMovie(movie_name)
 
-    def retrievePlayList(self, keyword=''):
+    def retrievePlayList(self, type, keyword='', category=''):
         """
         :param keyword: keyword to search
+        :param category: category to search
+        :param keyword: category to search
         :return: a list of movie names
         """
+        print(category)
         plp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         plp_socket.settimeout(1)
         plp_socket.bind(("", self.plp_port))
         addr = (self.server_addr, self.server_plp_port)
-        if keyword == '':
+        if type == 'LIST':
             plp_socket.sendto('LIST'.encode('utf-8'), addr)
+        elif type == 'CATEGORY':
+            plp_socket.sendto('CATEGORY'.encode('utf-8'), addr)
         else:
-            cmd = 'SEARCH ' + keyword
+            cmd = 'SEARCH ' + keyword + ' ' + category
             plp_socket.sendto(cmd.encode('utf-8'), addr)
         response, addr = plp_socket.recvfrom(8192)
         play_list = response.decode().split('\n')
@@ -132,6 +137,8 @@ class Client:
                         self.collectFrame(rtpPacket.getPayload(), self.frameNbr)
                     elif rtpPacket.payloadType() == 10:
                         self.collectAudioFrame(rtpPacket.getPayload(), self.frameNbr)
+                    elif rtpPacket.payloadType() == 37:
+                        self.collectSubtitle(rtpPacket.getPayload(), self.frameNbr)
 
             except:
                 # Stop listening upon requesting PAUSE or TEARDOWN

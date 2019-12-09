@@ -74,6 +74,7 @@ class Player(Client, PlayerWindow):
         self.lock = False
         self.rate = 1
         self.show()
+        self.getCategoryList()
         self.refreshPlayList()
         threading.Thread(target=self.updateMovie).start()
 
@@ -85,6 +86,9 @@ class Player(Client, PlayerWindow):
 
     def collectAudioFrame(self, sound, frame_no):
         self.audio_frame_queue.push(sound, frame_no)
+
+    def collectSubtitle(self, subtitle, subtitle_no):
+        pass
 
     def needBuffering(self):
         video_need = self.video_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
@@ -113,13 +117,13 @@ class Player(Client, PlayerWindow):
                 if not self.video_frame_queue.isEmpty() and not self.audio_frame_queue.isEmpty():
                     c = time.time()
                     sound, audio_frame_no = self.audio_frame_queue.pop()
-
+                    print(audio_frame_no)
                     #threading.Thread(target=playSound, args=(sound, 44100)).start()
                     threading.Thread(target=self.audio_player.playAudio, args=(sound, self.rate)).start()
 
                     d = time.time()
 
-                    print('playsound', round(d - c, 3))
+                    #print('playsound', round(d - c, 3))
                     image, frame_no = self.video_frame_queue.pop()
                     # dif = frame_no - self.last_frame_no
                     time_delay = self.modified_time_delay
@@ -129,11 +133,11 @@ class Player(Client, PlayerWindow):
                     end = time.time()
                     interval = round(end - start, 3)
                     time_delay -= interval
-                    print('slleep', time_delay)
+                    #print('slleep', time_delay)
                     a = time.time()
                     time.sleep(max(time_delay, 0))
                     b = time.time()
-                    print('actuaaly', round(b - a, 3))
+                    #print('actuaaly', round(b - a, 3))
             if self.state == self.PLAYING and self.needBuffering() and not self.buffering:
                 print("found problem")
                 self.buffering = True
@@ -189,9 +193,18 @@ class Player(Client, PlayerWindow):
 
     def refreshPlayList(self, keyword=''):
         self.PlayList.clear()
-        play_list = self.retrievePlayList(keyword)
+        play_list = self.retrievePlayList('SEARCH', keyword, self.CategoryComboBox.currentData())
+        print(self.CategoryComboBox.currentData()=='')
         for movie in play_list:
             self.PlayList.addItem(movie)
+
+    def getCategoryList(self):
+        self.CategoryComboBox.clear()
+        self.CategoryComboBox.addItem('all', '')
+        category_list = self.retrievePlayList('CATEGORY')
+        for category in category_list:
+            self.CategoryComboBox.addItem(category, category)
+
 
 
 if __name__ == "__main__":

@@ -98,6 +98,9 @@ class PlayerWindow(QWidget, Ui_Player):
         self.SearchIcon.setFixedWidth(28)
         self.SearchIcon.setFixedHeight(28)
         self.SearchKeyword.returnPressed.connect(lambda: self.refreshPlayList(self.SearchKeyword.text()))
+        self.SearchButton.clicked.connect(lambda: self.refreshPlayList(self.SearchKeyword.text()))
+
+        # self.CategoryComboBox.currentIndexChanged.connect(self.refreshPlayList)
 
     def playBackground(self, geometry):
         pixmap = QPixmap(geometry.width(), geometry.height())
@@ -231,6 +234,7 @@ class PlayerWindow(QWidget, Ui_Player):
     def playSpeedChanged(self):
         self.play_speed = self.PlaySpeedBox.currentData()
         self.calculate_true_time_delay()
+
 
     def bufferShowing(self):
         i = 0
