@@ -1,8 +1,8 @@
 # inherits from the qtdesigner generated files
 
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
-from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5.QtCore import Qt, QRect, QByteArray
+from PyQt5.QtGui import QIcon, QPixmap, QKeyEvent
+from PyQt5.QtCore import Qt, QRect, QByteArray, QEvent
 from player_ui import *
 import time
 import threading
@@ -15,22 +15,21 @@ class PlayerWindow(QWidget, Ui_Player):
     def __init__(self, parent=None):
         super(PlayerWindow, self).__init__(parent)
         self.setupUi(self)
-        # self.screen_width = self.Background.width()
-        # self.screen_height = self.Background.height()
-        # self.middle_x = (self.screen_width // 2) + self.Background.x()
-        # self.middle_y = (self.screen_height // 2) + self.Background.y()
 
         self.img_path = None
 
         # full screen size acquisition
-        self.desktop = QApplication.desktop()
-        self.full_size = self.desktop.screenGeometry()
+        desktop = QApplication.desktop()
+        self.full_size = desktop.screenGeometry()
         self.full_height = self.full_size.height()
         self.full_width = self.full_size.width()
         self.full_geometry = QRect(0, 0, self.full_width, self.full_height)
-
         self.background_geometry = self.Background.geometry()
-        self.last_geometry = self.Background.geometry()
+        self.origin_geometry = self.Background.geometry()
+
+        # transparent effect
+        self.op_half = QtWidgets.QGraphicsOpacityEffect()
+        self.op_half.setOpacity(0.5)
 
         # Button initiation
         self.FullScreenBtn.clicked.connect(self.setFullScreen)
@@ -38,6 +37,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.FullScreenBtn.setFixedHeight(28)
         self.FullScreenBtn.setStyleSheet("QPushButton{border-image: url(icons/fullscreen.png)}")
         self.full_screen_btn_geometry = self.FullScreenBtn.geometry()
+
         self.full_full_screen_btn_geometry = QRect(0, self.full_height-30, 30, 30)
 
         self.ExitFullScreenBtn.setFixedWidth(28)
@@ -49,13 +49,12 @@ class PlayerWindow(QWidget, Ui_Player):
                                            0,
                                            self.ExitFullScreenBtn.width(),
                                            self.ExitFullScreenBtn.height())
-        op = QtWidgets.QGraphicsOpacityEffect()
-        op.setOpacity(0.5)
-        self.ExitFullScreenBtn.setGraphicsEffect(op)
+
+        self.ExitFullScreenBtn.setGraphicsEffect(self.op_half)
 
         # Slider initiation
         self.Slider.installEventFilter(self)
-        # self.Slider.raise_()
+
         self.normal_slider_geometry = self.Slider.geometry()
         self.full_screen_slider_geometry = QRect(0, self.full_height-self.Slider.height(),
                                                  self.full_width, self.Slider.height())
@@ -67,6 +66,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.play_speed = self.PlaySpeedBox.currentData()
         self.PlaySpeedBox.currentIndexChanged.connect(self.playSpeedChanged)
 
+        # button initiations
         self.PlayBtn.setFixedWidth(28)
         self.PlayBtn.setFixedHeight(28)
         self.PauseBtn.setFixedWidth(28)
@@ -77,7 +77,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.PauseBtn.setStyleSheet("QPushButton{border-image: url(icons/pause.png)}")
 
         # Background initiation
-        self.playBackground(self.last_geometry)
+        self.playBackground(self.origin_geometry)
 
         self.bufferIcon = QLabel(self)
         self.bufferIcon.setGeometry(200, 200, 30, 30)
@@ -86,11 +86,19 @@ class PlayerWindow(QWidget, Ui_Player):
         self.bufferIcon.setVisible(False)
         self.buffering = False
 
-        self.PlayList.itemDoubleClicked.connect(self.foo)
+        self.PlayList.itemDoubleClicked.connect(lambda x: self.setupMovie(x.text()))
+        # for widget in self.children():
+        #     widget.keyPressEvent = self.keyPressEvent
 
         # threading.Thread(target=self.bufferShowing).start()
-    def foo(self, item):
-        print(item.text())
+        self.origin_menu_geometry = self.horizontalLayout.geometry()
+        self.full_menu_geometry = QRect(0, self.full_height-28, self.full_width, 28)
+
+        self.SearchIcon.setStyleSheet("QLabel{border-image: url(icons/search.png)}")
+        self.SearchIcon.setFixedWidth(28)
+        self.SearchIcon.setFixedHeight(28)
+        self.SearchKeyword.returnPressed.connect(lambda: self.refreshPlayList(self.SearchKeyword.text()))
+
     def playBackground(self, geometry):
         pixmap = QPixmap(geometry.width(), geometry.height())
         pixmap.fill(Qt.black)
@@ -104,7 +112,7 @@ class PlayerWindow(QWidget, Ui_Player):
         if self.isFullScreen():
             self.playFrame(self.full_geometry)
         else:
-            self.playFrame(self.last_geometry)
+            self.playFrame(self.origin_geometry)
 
     def playFrame(self, geometry):
         self.lock = True
@@ -138,7 +146,7 @@ class PlayerWindow(QWidget, Ui_Player):
         if not self.isFullScreen():
             print("beforefullscreen")
             self.showFullScreen()
-            self.last_geometry = self.Background.geometry()
+            self.origin_geometry = self.Background.geometry()
             print("afterfullscreen")
             self.playBackground(self.full_geometry)
             if self.state != self.PLAYING:
@@ -146,18 +154,20 @@ class PlayerWindow(QWidget, Ui_Player):
             print("afterplayframe")
 
             self.changeScreenSize()
-            op = QtWidgets.QGraphicsOpacityEffect()
-            op.setOpacity(0.5)
-            self.Slider.setGraphicsEffect(op)
+
+            # self.Slider.setGraphicsEffect(self.op_half)
+            print("heeli")
             self.Slider.setGeometry(self.full_screen_slider_geometry)
             print("afterslider")
             # self.FullScreenBtn.setVisible(False)
             # self.PlayBtn.setVisible(False)
             # self.PauseBtn.setVisible(False)
             self.FullScreenBtn.setGeometry(self.full_full_screen_btn_geometry)
-            self.FullScreenBtn.setGraphicsEffect(op)
-            self.PlayBtn.setGraphicsEffect(op)
-            self.PauseBtn.setGraphicsEffect(op)
+            self.PlayList.setVisible(False)
+            self.horizontalLayout.setGeometry(self.full_menu_geometry)
+            # self.FullScreenBtn.setGraphicsEffect(self.op_half)
+            # self.PlayBtn.setGraphicsEffect(self.op_half)
+            # self.PauseBtn.setGraphicsEffect(self.op_half)
             print("afterbutton")
 
 
@@ -167,7 +177,7 @@ class PlayerWindow(QWidget, Ui_Player):
         if self.isFullScreen():
             self.showNormal()
             if self.state != self.PLAYING:
-                self.playFrame(self.last_geometry)
+                self.playFrame(self.origin_geometry)
             self.changeScreenSize()
             self.playBackground(self.background_geometry)
             op = QtWidgets.QGraphicsOpacityEffect()
@@ -180,12 +190,29 @@ class PlayerWindow(QWidget, Ui_Player):
             self.FullScreenBtn.setGeometry(self.full_screen_btn_geometry)
             self.PlayBtn.setGraphicsEffect(op)
             self.PauseBtn.setGraphicsEffect(op)
+            self.PlayList.setVisible(True)
+            self.horizontalLayout.setGeometry(self.origin_menu_geometry)
 
             self.ExitFullScreenBtn.setVisible(False)
 
     def keyPressEvent(self, QKeyEvent):
         if QKeyEvent.key() == Qt.Key_Escape:
             self.exitFullScreen()
+        if QKeyEvent.key() == Qt.Key_P:
+            if self.state == self.PLAYING:
+                self.pauseMovie()
+            if self.state == self.READY:
+                self.playMovie()
+
+    # def event(self, event):
+    #     if (event.type() == QEvent.KeyPress) and (event.key() == Qt.Key_Space):
+    #         print("yes")
+    #         if self.state == self.PLAYING:
+    #             self.pauseMovie()
+    #         if self.state == self.PAUSE:
+    #             self.playMovie()
+    #     else:
+    #         return QWidget.event(self, event)
 
 
     def eventFilter(self, a0: 'QObject', a1: 'QEvent') -> bool:
@@ -201,9 +228,6 @@ class PlayerWindow(QWidget, Ui_Player):
             return False
         return False
 
-    def showSlider(self):
-        self.Slider.setVisible(True)
-
     def playSpeedChanged(self):
         self.play_speed = self.PlaySpeedBox.currentData()
         self.calculate_true_time_delay()
@@ -212,10 +236,7 @@ class PlayerWindow(QWidget, Ui_Player):
         i = 0
         while True:
             if self.buffering:
-                # pixmap = QPixmap("icons/buffer"+str(i+1)+'.png')
-                # self.bufferIcon.setPixmap(pixmap)
                 self.bufferIcon.setStyleSheet("QLabel{border-image: url(icons/buffer%d.png)}" % (i+1))
-                #print("hr")
                 i += 1
                 i %= 5
                 time.sleep(0.1)

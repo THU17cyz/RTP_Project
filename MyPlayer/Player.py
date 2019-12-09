@@ -1,21 +1,15 @@
 import sys
 import time
 import threading
-from audio_player import playSound, AudioPlayer
-from extract_frame import FrameExtractor
+from audio_player import AudioPlayer
 from pyqt5_ui import PlayerWindow
 from PyQt5.QtWidgets import QApplication
 from Client import Client
-
 import ctypes
-from ctypes import wintypes
 
 winmm = ctypes.WinDLL('winmm')
-# from ctypes import windll #new
+winmm.timeBeginPeriod(1)
 
-# timeBeginPeriod = windll.winmm.timeBeginPeriod #new
-winmm.timeBeginPeriod(1) #new
-print("set accuracy")
 
 class FrameQueue:
     def __init__(self, capacity, thresh=100):
@@ -62,8 +56,8 @@ class FrameQueue:
 
 
 class Player(Client, PlayerWindow):
-    def __init__(self, serveraddr, serverport, server_plp_port, rtpport, plp_port, movie_name):
-        Client.__init__(self, serveraddr, serverport, server_plp_port, rtpport, plp_port, movie_name)
+    def __init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name):
+        Client.__init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name)
         PlayerWindow.__init__(self)
         self.playlist = []  # all the videos which can be played
         self.last_play = None  # the video player last time
@@ -83,7 +77,6 @@ class Player(Client, PlayerWindow):
         self.refreshPlayList()
         threading.Thread(target=self.updateMovie).start()
 
-        self.audio_player = AudioPlayer()
         # self.time_delay = round(1 / self.video_fps, 3)
         # self.modified_time_delay = 0
 
@@ -106,6 +99,7 @@ class Player(Client, PlayerWindow):
         audio_end = self.audio_frame_queue.reachThresh() or \
                     self.audio_frame_queue.last() == self.video_frame_count - 1
         return video_end and audio_end
+
 
     def updateMovie(self):
         while True:
@@ -154,7 +148,7 @@ class Player(Client, PlayerWindow):
 
     def sliderReleaseEvent(self):
         self.video_frame_queue.jump()
-
+        self.audio_frame_queue.jump()
         total = self.Slider.maximum()
         cur = self.Slider.value()
         time_total = self.video_frame_count
@@ -176,6 +170,10 @@ class Player(Client, PlayerWindow):
         self.Slider.setValue(value)
 
     def calculate_true_time_delay(self):
+        """
+        calculate true time delay according to play speed
+        :return: None
+        """
         if self.play_speed == self.ORIGIN_SPEED:
             self.rate = 1
             self.modified_time_delay = self.time_delay
@@ -189,8 +187,9 @@ class Player(Client, PlayerWindow):
     def closeEvent(self, event):
         self.exitAttempt()
 
-    def refreshPlayList(self):
-        play_list = self.retrievePlayList()
+    def refreshPlayList(self, keyword=''):
+        self.PlayList.clear()
+        play_list = self.retrievePlayList(keyword)
         for movie in play_list:
             self.PlayList.addItem(movie)
 
