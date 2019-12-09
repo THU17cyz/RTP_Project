@@ -86,8 +86,11 @@ class PlayerWindow(QWidget, Ui_Player):
         self.bufferIcon.setVisible(False)
         self.buffering = False
 
-        # threading.Thread(target=self.bufferShowing).start()
+        self.PlayList.itemDoubleClicked.connect(self.foo)
 
+        # threading.Thread(target=self.bufferShowing).start()
+    def foo(self, item):
+        print(item.text())
     def playBackground(self, geometry):
         pixmap = QPixmap(geometry.width(), geometry.height())
         pixmap.fill(Qt.black)

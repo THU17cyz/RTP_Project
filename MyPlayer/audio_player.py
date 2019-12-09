@@ -1,6 +1,32 @@
 from pydub import AudioSegment
 from pydub.playback import play
 
+import pyaudio
+
+
+class AudioPlayer:
+    def __init__(self):
+        self.pyaud = pyaudio.PyAudio()
+        self.srate = 44100
+        self.rate = 1
+        # print(self.pyaud.get_format_from_width(1))
+        self.stream = self.pyaud.open(format=self.pyaud.get_format_from_width(2),
+                            channels=2,
+                            rate=self.srate,
+                            output=True)
+
+    def playAudio(self, data, rate=1):
+        # if rate != self.rate:
+        #     self.rate = rate
+        #     self.stream.close()
+        #     self.stream = self.pyaud.open(format=self.pyaud.get_format_from_width(2),
+        #                               channels=2,
+        #                               rate=int(self.srate * rate),
+        #                               output=True)
+        if rate != 1:
+            data = change_speed(data, rate)
+        self.stream.write(data)
+
 class AudioCapturer:
     def __init__(self, audio, video_fps, frame_count, cache_path):
         extension = audio.split('.')[-1]
@@ -30,6 +56,24 @@ class AudioCapturer:
         self.frame_no += 1
         return data, self.frame_no-1
 
+def change_speed(data, speed=1.0):
+    print("before", len(data))
+    sound = AudioSegment(
+        # raw audio data (bytes)
+        data=data,
+
+        # 2 byte (16 bit) samples
+        sample_width=2,
+
+        # 44.1 kHz frame rate
+        frame_rate=44100,
+
+        # stereo
+        channels=2
+    )
+    sound = speed_change(sound, speed)
+    print("after", len(sound.raw_data))
+    return sound.raw_data
 
 def speed_change(sound, speed=1.0):
     # Manually override the frame_rate. This tells the computer how many
@@ -42,7 +86,7 @@ def speed_change(sound, speed=1.0):
      # know how to play audio at standard frame rate (like 44.1k)
     return sound_with_altered_frame_rate.set_frame_rate(sound.frame_rate)
 
-def playSound(sound):
+def playSound(sound, frame_rate):
     splice = AudioSegment(
         # raw audio data (bytes)
         data=sound,
@@ -51,12 +95,13 @@ def playSound(sound):
         sample_width=2,
 
         # 44.1 kHz frame rate
-        frame_rate=44100,
+        frame_rate=frame_rate,
 
         # stereo
         channels=2
     )
     play(splice)
+
 
 
 if __name__ == "__main__":

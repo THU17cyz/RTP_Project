@@ -1,7 +1,7 @@
 import sys
 import time
 import threading
-from audio_player import playSound
+from audio_player import playSound, AudioPlayer
 from extract_frame import FrameExtractor
 from pyqt5_ui import PlayerWindow
 from PyQt5.QtWidgets import QApplication
@@ -61,8 +61,6 @@ class FrameQueue:
         return self.queue[last][1]
 
 
-
-
 class Player(Client, PlayerWindow):
     def __init__(self, serveraddr, serverport, server_plp_port, rtpport, plp_port, movie_name):
         Client.__init__(self, serveraddr, serverport, server_plp_port, rtpport, plp_port, movie_name)
@@ -80,9 +78,12 @@ class Player(Client, PlayerWindow):
         self.buffering = False
         self.last_frame_no = 0
         self.lock = False
+        self.rate = 1
         self.show()
         self.refreshPlayList()
         threading.Thread(target=self.updateMovie).start()
+
+        self.audio_player = AudioPlayer()
         # self.time_delay = round(1 / self.video_fps, 3)
         # self.modified_time_delay = 0
 
@@ -93,32 +94,39 @@ class Player(Client, PlayerWindow):
         self.audio_frame_queue.push(sound, frame_no)
 
     def needBuffering(self):
-        return self.video_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
+        video_need = self.video_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
+        audio_need = self.audio_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
+
+        return video_need or audio_need
                # and self.video_frame_queue.last() != self.video_frame_count - 1 \
 
     def endBuffering(self):
-        return self.video_frame_queue.reachThresh() or \
-               self.video_frame_queue.last() == self.video_frame_count - 1 \
+        video_end = self.video_frame_queue.reachThresh() or \
+                    self.video_frame_queue.last() == self.video_frame_count - 1
+        audio_end = self.audio_frame_queue.reachThresh() or \
+                    self.audio_frame_queue.last() == self.video_frame_count - 1
+        return video_end and audio_end
 
     def updateMovie(self):
-
         while True:
             start = time.time()
             if self.state == self.PLAYING:
                 if self.buffering and not self.endBuffering():
-
                     continue
 
                 self.buffering = False
                 self.bufferIcon.setVisible(False)
-                if not self.video_frame_queue.isEmpty():
+                if not self.video_frame_queue.isEmpty() and not self.audio_frame_queue.isEmpty():
+                    c = time.time()
                     sound, audio_frame_no = self.audio_frame_queue.pop()
-                    threading.Thread(target=playSound, args=(sound,)).start()
 
+                    #threading.Thread(target=playSound, args=(sound, 44100)).start()
+                    threading.Thread(target=self.audio_player.playAudio, args=(sound, self.rate)).start()
+
+                    d = time.time()
+
+                    print('playsound', round(d - c, 3))
                     image, frame_no = self.video_frame_queue.pop()
-                    # with open("cache.jpg", "wb") as f:
-                    #     f.write(image)
-                    # print(frame_no)
                     # dif = frame_no - self.last_frame_no
                     time_delay = self.modified_time_delay
                     self.last_frame_no = frame_no
@@ -169,10 +177,13 @@ class Player(Client, PlayerWindow):
 
     def calculate_true_time_delay(self):
         if self.play_speed == self.ORIGIN_SPEED:
+            self.rate = 1
             self.modified_time_delay = self.time_delay
         elif self.play_speed == self.DOUBLE_SPEED:
+            self.rate = 2
             self.modified_time_delay = round(0.5 / self.video_fps, 3)
         elif self.play_speed == self.HALF_SPEED:
+            self.rate = 0.5
             self.modified_time_delay = round(2 / self.video_fps, 3)
 
     def closeEvent(self, event):
