@@ -54,15 +54,16 @@ class SubtitleExtractor:
 
     def extractLine(self):
         try:
-            while self.subtitle[self.line_no].strip() != str(self.subtitle_no):
+            while self.subtitle[self.line_no].strip() != str(self.subtitle_no+1):
                 self.line_no += 1
         except IndexError:
             return '', -1
         data = ''
         while self.subtitle[self.line_no].strip() != '':
             data += self.subtitle[self.line_no]
+            self.line_no += 1
         self.subtitle_no += 1
-        return data.encode(), self.subtitle_no-1
+        return data, self.subtitle_no-1
 
 
 # class FrameExtractor(QThread):

@@ -7,6 +7,16 @@ from player_ui import *
 import time
 import threading
 
+from PyQt5.QtWidgets import QMessageBox
+
+def qt_exception_wrapper(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            func(self, *args, **kwargs)
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
+                QMessageBox.Yes, QMessageBox.Yes)
+    return wrapper
 
 class PlayerWindow(QWidget, Ui_Player):
     ORIGIN_SPEED = 0
@@ -32,7 +42,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.op_half.setOpacity(0.5)
 
         # Button initiation
-        self.FullScreenBtn.clicked.connect(self.setFullScreen)
+        self.FullScreenBtn.clicked.connect(lambda: self.setFullScreen())
         self.FullScreenBtn.setFixedWidth(28)
         self.FullScreenBtn.setFixedHeight(28)
         self.FullScreenBtn.setStyleSheet("QPushButton{border-image: url(icons/fullscreen.png)}")
@@ -43,7 +53,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.ExitFullScreenBtn.setFixedWidth(28)
         self.ExitFullScreenBtn.setFixedHeight(28)
         self.ExitFullScreenBtn.setStyleSheet("QPushButton{border-image: url(icons/exitfullscreen.png)}")
-        self.ExitFullScreenBtn.clicked.connect(self.exitFullScreen)
+        self.ExitFullScreenBtn.clicked.connect(lambda: self.exitFullScreen())
         self.ExitFullScreenBtn.setVisible(False)
         self.ExitFullScreenBtn.setGeometry(self.full_width-self.ExitFullScreenBtn.width(),
                                            0,
@@ -102,12 +112,14 @@ class PlayerWindow(QWidget, Ui_Player):
 
         # self.CategoryComboBox.currentIndexChanged.connect(self.refreshPlayList)
 
+    @qt_exception_wrapper
     def playBackground(self, geometry):
         pixmap = QPixmap(geometry.width(), geometry.height())
         pixmap.fill(Qt.black)
         self.Background.setGeometry(geometry)
         self.Background.setPixmap(pixmap)
 
+    @qt_exception_wrapper
     def getFrame(self, img_path):
         self.img_path = img_path
         while self.lock:
@@ -117,7 +129,9 @@ class PlayerWindow(QWidget, Ui_Player):
         else:
             self.playFrame(self.origin_geometry)
 
+    @qt_exception_wrapper
     def playFrame(self, geometry):
+        print("print")
         self.lock = True
         if self.img_path is None:
             return
@@ -141,10 +155,12 @@ class PlayerWindow(QWidget, Ui_Player):
         self.Screen.setPixmap(pixmap)
         self.lock = False
 
+    @qt_exception_wrapper
     def changeScreenSize(self):
         self.screen_width = self.Screen.width()
         self.screen_height = self.Screen.height()
 
+    @qt_exception_wrapper
     def setFullScreen(self):
         if not self.isFullScreen():
             print("beforefullscreen")
@@ -167,7 +183,14 @@ class PlayerWindow(QWidget, Ui_Player):
             # self.PauseBtn.setVisible(False)
             self.FullScreenBtn.setGeometry(self.full_full_screen_btn_geometry)
             self.PlayList.setVisible(False)
-            self.horizontalLayout.setGeometry(self.full_menu_geometry)
+            self.SearchButton.setVisible(False)
+            self.SearchIcon.setVisible(False)
+            self.SearchKeyword.setVisible(False)
+            self.PlaySpeedBox.setVisible(False)
+            self.CategoryComboBox.setVisible(False)
+            self.CategoryLabel.setVisible(False)
+            self.HistoryList.setVisible(False)
+            # self.horizontalLayout.setGeometry(self.full_menu_geometry)
             # self.FullScreenBtn.setGraphicsEffect(self.op_half)
             # self.PlayBtn.setGraphicsEffect(self.op_half)
             # self.PauseBtn.setGraphicsEffect(self.op_half)
@@ -176,6 +199,7 @@ class PlayerWindow(QWidget, Ui_Player):
 
             self.ExitFullScreenBtn.setVisible(True)
 
+    @qt_exception_wrapper
     def exitFullScreen(self):
         if self.isFullScreen():
             self.showNormal()
@@ -194,9 +218,17 @@ class PlayerWindow(QWidget, Ui_Player):
             self.PlayBtn.setGraphicsEffect(op)
             self.PauseBtn.setGraphicsEffect(op)
             self.PlayList.setVisible(True)
-            self.horizontalLayout.setGeometry(self.origin_menu_geometry)
+            self.SearchButton.setVisible(True)
+            self.SearchIcon.setVisible(True)
+            self.SearchKeyword.setVisible(True)
+            self.HistoryList.setVisible(True)
+            self.PlaySpeedBox.setVisible(True)
+            self.CategoryComboBox.setVisible(True)
+            self.CategoryLabel.setVisible(True)
+            # self.horizontalLayout.setGeometry(self.origin_menu_geometry)
 
             self.ExitFullScreenBtn.setVisible(False)
+
 
     def keyPressEvent(self, QKeyEvent):
         if QKeyEvent.key() == Qt.Key_Escape:
@@ -231,14 +263,16 @@ class PlayerWindow(QWidget, Ui_Player):
             return False
         return False
 
+    @qt_exception_wrapper
     def playSpeedChanged(self):
         self.play_speed = self.PlaySpeedBox.currentData()
         self.calculate_true_time_delay()
 
-
+    @qt_exception_wrapper
     def bufferShowing(self):
         i = 0
         while True:
+            print("wula")
             if self.buffering:
                 self.bufferIcon.setStyleSheet("QLabel{border-image: url(icons/buffer%d.png)}" % (i+1))
                 i += 1

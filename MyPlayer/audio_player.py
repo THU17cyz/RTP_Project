@@ -1,7 +1,16 @@
 from pydub import AudioSegment
 from pydub.playback import play
 import pyaudio
+from PyQt5.QtWidgets import QMessageBox
 
+def qt_exception_wrapper(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            func(self, *args, **kwargs)
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
+                QMessageBox.Yes, QMessageBox.Yes)
+    return wrapper
 
 class AudioPlayer:
     def __init__(self, channels, frame_rate, sample_width):
@@ -15,6 +24,7 @@ class AudioPlayer:
                                       rate=self.frame_rate,
                                       output=True)
 
+    @qt_exception_wrapper
     def playAudio(self, data, rate=1):
         """
         play a segment of raw audio
@@ -103,7 +113,7 @@ def playSound(sound, frame_rate):
         # stereo
         channels=2
     )
-    return splice
+    #return splice
     play(splice)
 
 

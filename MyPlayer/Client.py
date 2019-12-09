@@ -3,6 +3,21 @@ import socket
 import threading
 from audio_player import AudioPlayer
 from RtpPacket import RtpPacket
+from subtitle import Subtitle
+
+from PyQt5.QtWidgets import QMessageBox
+
+
+
+def qt_exception_wrapper(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            func(self, *args, **kwargs)
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
+                QMessageBox.Yes, QMessageBox.Yes)
+    return wrapper
+
 
 
 class Client:
@@ -51,7 +66,7 @@ class Client:
         self.cache_file = ''
         self.cache_extension = 'jpg'
 
-        self.connectToServer()
+
         # self.setupMovie(movie_name)
 
     def retrievePlayList(self, type, keyword='', category=''):
@@ -78,14 +93,32 @@ class Client:
         plp_socket.close()
         return play_list
 
+    @qt_exception_wrapper
     def setupMovie(self, movie_name):
         """Setup button handler."""
-        if self.state == self.INIT:
+        if self.state == self.INIT or self.state == self.READY:
+            self.rtsp_seq = 0
             self.movie_name = movie_name
+            self.initNewMovie()
+            self.connectToServer()
+
+            self.sendRtspRequest(self.SETUP, movie_name)
+        elif self.state == self.PLAYING:
+            self.pauseMovie()
+            self.exitClient()
+            self.play_end = True
+            while self.state != self.INIT:
+                print("fuckkk")
+            print(movie_name)
+            self.movie_name = movie_name
+            self.rtsp_seq = 0
+            self.initNewMovie()
+            self.connectToServer()
+
             self.sendRtspRequest(self.SETUP, movie_name)
 
-
-    def exitAttempt(self):
+    @qt_exception_wrapper
+    def exitAttempt(self, event):
         if self.state != self.PLAYING:
             self.exitClient()
         else:
@@ -96,18 +129,19 @@ class Client:
                 self.exitClient()
             else:
                 self.playMovie()
+                event.ignore()
 
-
-
+    @qt_exception_wrapper
     def exitClient(self):
         self.sendRtspRequest(self.TEARDOWN)
 
-
+    @qt_exception_wrapper
     def pauseMovie(self):
         """Pause button handler."""
         if self.state == self.PLAYING:
             self.sendRtspRequest(self.PAUSE)
 
+    @qt_exception_wrapper
     def playMovie(self, pos=-1):
         """Play button handler."""
         if self.state == self.READY:
@@ -120,11 +154,12 @@ class Client:
             else:
                 self.sendRtspRequest(self.PLAY, pos)
 
+    @qt_exception_wrapper
     def listenRtp(self):
         """Listen for RTP packets."""
         while True:
             try:
-                data = self.rtpSocket.recv(80000)
+                data = self.rtpSocket.recv(60000)
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
@@ -150,8 +185,11 @@ class Client:
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
+                    self.rtsp_seq = 0
+                    self.teardownAcked = 0
                     break
 
+    @qt_exception_wrapper
     def writeFrame(self, data):
         """Write the received frame to a temp image file. Return the image file."""
         cache_name = self.cache_file + str(self.sessionId) + self.cache_extension
@@ -160,12 +198,15 @@ class Client:
         file.close()
         return cache_name
 
+    @qt_exception_wrapper
     def collectFrame(self, image):
         pass
 
+    @qt_exception_wrapper
     def collectAudioFrame(self, sound):
         pass
 
+    @qt_exception_wrapper
     def updateMovie(self):
         """Update the image file as video frame in the GUI."""
         # img = Image.open(imageFile)
@@ -174,6 +215,7 @@ class Client:
         # self.label.image = photo
         pass
 
+    @qt_exception_wrapper
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""
         self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -182,6 +224,7 @@ class Client:
         except Exception as e:
             print(str(e))
 
+    @qt_exception_wrapper
     def sendRtspRequest(self, requestCode, *args):
         """Send RTSP request to the server."""
 
@@ -251,6 +294,7 @@ class Client:
 
         print('\nData sent:\n' + request)
 
+    @qt_exception_wrapper
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
         while True:
@@ -259,20 +303,25 @@ class Client:
 
                 if reply:
                     self.parseRtspReply(reply.decode("utf-8"))
-
-                # Close the RTSP socket upon requesting Teardown
-                if self.requestSent == self.TEARDOWN:
-                    self.rtspSocket.shutdown(socket.SHUT_RDWR)
-                    self.rtspSocket.close()
-                    break
+                else:
+                    if self.requestSent == self.TEARDOWN:
+                        self.rtspSocket.shutdown(socket.SHUT_RDWR)
+                        self.rtspSocket.close()
+                        break
+                # # Close the RTSP socket upon requesting Teardown
+                # if self.requestSent == self.TEARDOWN:
+                #     self.rtspSocket.shutdown(socket.SHUT_RDWR)
+                #     self.rtspSocket.close()
+                #     break
             except:
                 self.rtspSocket.shutdown(socket.SHUT_RDWR)
                 self.rtspSocket.close()
-                self.rtpSocket.shutdown(socket.SHUT_RDWR)
-                self.rtpSocket.close()
-                self.teardownAcked = 1
+                # self.rtpSocket.shutdown(socket.SHUT_RDWR)
+                # self.rtpSocket.close()
+                # self.teardownAcked = 1
                 break
 
+    @qt_exception_wrapper
     def parseRtspReply(self, data):
         """Parse the RTSP reply from the server."""
         lines = str(data).split('\n')
@@ -304,6 +353,7 @@ class Client:
                         self.modified_time_delay = self.time_delay
                         self.audio_player = AudioPlayer(self.audio_channels, self.audio_frame_rate,
                                                         self.audio_sample_width)
+                        # self.subtitle = Subtitle(self.video_frame_count, self.video_fps)
                     elif self.requestSent == self.PLAY:
                         self.state = self.PLAYING
                     elif self.requestSent == self.PAUSE:
@@ -315,6 +365,7 @@ class Client:
                         # Flag the teardownAcked to close the socket.
                         self.teardownAcked = 1
 
+    @qt_exception_wrapper
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""
         # Create a new datagram socket to receive RTP packets from the server

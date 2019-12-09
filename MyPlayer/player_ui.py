@@ -104,6 +104,10 @@ class Ui_Player(object):
         self.HistoryList = QtWidgets.QListWidget(self.verticalLayoutWidget)
         self.HistoryList.setObjectName("HistoryList")
         self.verticalLayout.addWidget(self.HistoryList)
+        self.SubtitleText = QtWidgets.QLabel(Player)
+        self.SubtitleText.setGeometry(QtCore.QRect(91, 564, 691, 61))
+        self.SubtitleText.setText("")
+        self.SubtitleText.setObjectName("SubtitleText")
 
         self.retranslateUi(Player)
         QtCore.QMetaObject.connectSlotsByName(Player)

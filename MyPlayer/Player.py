@@ -2,14 +2,25 @@ import sys
 import time
 import threading
 from audio_player import AudioPlayer
+from subtitle import Subtitle
 from pyqt5_ui import PlayerWindow
 from PyQt5.QtWidgets import QApplication
 from Client import Client
 import ctypes
+from PyQt5.QtWidgets import QMessageBox
 
 winmm = ctypes.WinDLL('winmm')
 winmm.timeBeginPeriod(1)
 
+
+def qt_exception_wrapper(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            func(self, *args, **kwargs)
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
+                QMessageBox.Yes, QMessageBox.Yes)
+    return wrapper
 
 class FrameQueue:
     def __init__(self, capacity, thresh=100):
@@ -62,24 +73,28 @@ class Player(Client, PlayerWindow):
         self.playlist = []  # all the videos which can be played
         self.last_play = None  # the video player last time
         self.play_end = False  # if a video is completely played, set this to True
-        self.video_frame_queue = FrameQueue(2000)
-        self.audio_frame_queue = FrameQueue(2000)
-        self.Slider.sliderPressed.connect(self.sliderPressEvent)
-        self.Slider.sliderReleased.connect(self.sliderReleaseEvent)
-        self.PlayBtn.clicked.connect(self.play)
-        self.PauseBtn.clicked.connect(self.pause)
+
+        self.Slider.sliderPressed.connect(lambda: self.sliderPressEvent())
+        self.Slider.sliderReleased.connect(lambda: self.sliderReleaseEvent())
+        self.PlayBtn.clicked.connect(lambda: self.play())
+        self.PauseBtn.clicked.connect(lambda: self.pause())
         self.closeEvent = self.closeEvent
-        self.buffering = False
-        self.last_frame_no = 0
-        self.lock = False
-        self.rate = 1
+
         self.show()
         self.getCategoryList()
         self.refreshPlayList()
-        threading.Thread(target=self.updateMovie).start()
 
         # self.time_delay = round(1 / self.video_fps, 3)
         # self.modified_time_delay = 0
+    def initNewMovie(self):
+        self.buffering = False
+        self.video_frame_queue = FrameQueue(2000)
+        self.audio_frame_queue = FrameQueue(2000)
+        self.subtitle = {}
+        self.last_frame_no = 0
+        self.lock = False
+        self.rate = 1
+        threading.Thread(target=self.updateMovie).start()
 
     def collectFrame(self, image, frame_no):
         self.video_frame_queue.push(image, frame_no)
@@ -88,7 +103,9 @@ class Player(Client, PlayerWindow):
         self.audio_frame_queue.push(sound, frame_no)
 
     def collectSubtitle(self, subtitle, subtitle_no):
-        pass
+        # self.subtitle.generateFrame2Subtitle(subtitle, subtitle_no)
+        print("heyyyyyyyyyyyyyyyyyy")
+        self.subtitle[subtitle_no] = subtitle.decode('utf-8')
 
     def needBuffering(self):
         video_need = self.video_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
@@ -104,9 +121,11 @@ class Player(Client, PlayerWindow):
                     self.audio_frame_queue.last() == self.video_frame_count - 1
         return video_end and audio_end
 
-
+    @qt_exception_wrapper
     def updateMovie(self):
         while True:
+            if self.play_end:
+                break
             start = time.time()
             if self.state == self.PLAYING:
                 if self.buffering and not self.endBuffering():
@@ -115,6 +134,7 @@ class Player(Client, PlayerWindow):
                 self.buffering = False
                 self.bufferIcon.setVisible(False)
                 if not self.video_frame_queue.isEmpty() and not self.audio_frame_queue.isEmpty():
+
                     c = time.time()
                     sound, audio_frame_no = self.audio_frame_queue.pop()
                     print(audio_frame_no)
@@ -129,27 +149,36 @@ class Player(Client, PlayerWindow):
                     time_delay = self.modified_time_delay
                     self.last_frame_no = frame_no
                     self.getFrame(image)
-                    self.setSliderPosition(frame_no)
+                    # self.setSliderPosition(frame_no)
                     end = time.time()
                     interval = round(end - start, 3)
                     time_delay -= interval
+
+                    if frame_no in self.subtitle.keys():
+                        print(self.subtitle[frame_no])
+                        self.SubtitleText.setText(self.subtitle[frame_no])
                     #print('slleep', time_delay)
                     a = time.time()
                     time.sleep(max(time_delay, 0))
                     b = time.time()
+                    if frame_no == self.video_frame_count - 1:
+                        break
                     #print('actuaaly', round(b - a, 3))
             if self.state == self.PLAYING and self.needBuffering() and not self.buffering:
                 print("found problem")
                 self.buffering = True
                 self.bufferIcon.setVisible(True)
+                print("found again")
                 threading.Thread(target=self.bufferShowing).start()
-                pass
             elif self.teardownAcked:
                 break
+        # self.sendRtspRequest(self.TEARDOWN)
 
+    @qt_exception_wrapper
     def sliderPressEvent(self):
         self.pauseMovie()
 
+    @qt_exception_wrapper
     def sliderReleaseEvent(self):
         self.video_frame_queue.jump()
         self.audio_frame_queue.jump()
@@ -160,19 +189,21 @@ class Player(Client, PlayerWindow):
         print(time_cur)
         self.playMovie(time_cur)
 
-
+    @qt_exception_wrapper
     def play(self):
         self.playMovie()
 
-
+    @qt_exception_wrapper
     def pause(self):
         self.pauseMovie()
 
+    @qt_exception_wrapper
     def setSliderPosition(self, frame_no):
         # value = self.frameNbr * self.Slider.maximum() // self.video_frame_count
         value = frame_no * self.Slider.maximum() // (self.video_frame_count - 1)
         self.Slider.setValue(value)
 
+    @qt_exception_wrapper
     def calculate_true_time_delay(self):
         """
         calculate true time delay according to play speed
@@ -189,7 +220,7 @@ class Player(Client, PlayerWindow):
             self.modified_time_delay = round(2 / self.video_fps, 3)
 
     def closeEvent(self, event):
-        self.exitAttempt()
+        self.exitAttempt(event)
 
     def refreshPlayList(self, keyword=''):
         self.PlayList.clear()
