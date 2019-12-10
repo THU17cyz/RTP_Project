@@ -1,5 +1,5 @@
 import time
-
+import os
 from PyQt5.QtWidgets import QMessageBox
 import socket
 import threading
@@ -97,6 +97,8 @@ class Client:
     def setupMovie(self, movie_name='test.mp4'):
         """Setup button handler."""
         self.historylist.insert(0, movie_name)
+        if self.historylist.size() > 15:
+            self.historylist.delete(15)
         if not self.rtsp_running:#self.state == self.INIT:
             self.rtsp_seq = 0
             self.movie_name = movie_name
@@ -109,6 +111,7 @@ class Client:
             time.sleep(0.5)
             self.play_end = True
             self.sendRtspRequest(self.TEARDOWN)
+            self.play_record[self.movie_name] = self.video_frame_no
             self.rtpSocket.shutdown(socket.SHUT_RDWR)
             self.rtpSocket.close()
 
@@ -127,11 +130,27 @@ class Client:
 
     @qt_exception_wrapper
     def exitClient(self):
-        self.play_end = True
-        self.sendRtspRequest(self.TEARDOWN)
-        self.rtpSocket.shutdown(socket.SHUT_RDWR)
-        self.rtpSocket.close()
-        self.master.destroy()  # Close the gui window
+
+
+        if self.rtsp_running:
+            self.play_end = True
+            self.sendRtspRequest(self.TEARDOWN)
+            self.play_record[self.movie_name] = self.cur_frame
+            if not os.path.exists(os.path.dirname(self.record_file)):
+                os.mkdir(os.path.dirname(self.record_file))
+            with open(self.record_file, "w") as f:
+                for i in range(self.historylist.size()):
+                    f.write(self.historylist.get(i) + '\n')
+                f.write(str(self.play_record[self.historylist.get(0)]))
+            try:
+                self.rtpSocket.shutdown(socket.SHUT_RDWR)
+                self.rtpSocket.close()
+            except:
+                pass
+            self.master.destroy()  # Close the gui window
+        else:
+            self.master.destroy()  # Close the gui window
+
 
     @qt_exception_wrapper
     def pauseMovie(self):

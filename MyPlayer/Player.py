@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 import time
 import threading
@@ -93,6 +94,9 @@ class Player(Client):
         self.play_end = False  # if a video is completely played, set this to True
         self.play_speed = 1
         self.cur_frame = 0
+        self.record_file = 'record/record.txt'
+        self.play_record = {}
+
 
         # self.Slider.sliderPressed.connect(lambda: self.sliderPressEvent())
         # self.Slider.sliderReleased.connect(lambda: self.sliderReleaseEvent())
@@ -106,6 +110,25 @@ class Player(Client):
         self.master = master
         self.master.protocol("WM_DELETE_WINDOW", self.handler)
         self.createWidgets()
+        if os.path.exists(self.record_file):
+            with open(self.record_file, "r") as f:
+                lines = f.read().split('\n')
+            i = 0
+            for line in lines[:-1]:
+                self.historylist.insert(i, line.strip())
+                i += 1
+            last_movie = self.historylist.get(0)
+            self.play_record[last_movie] = lines[-1].strip()
+            print(last_movie)
+            frame_memory = self.play_record[last_movie]
+            if frame_memory != '':
+                self.setupMovie(last_movie)
+                frame_memory = int(frame_memory)
+                self.cur_frame = frame_memory
+                self.memory = frame_memory
+        else:
+            self.memory = ''
+
 
 
     def createWidgets(self):
@@ -154,7 +177,7 @@ class Player(Client):
         f3.place(x=70, y=650)
         self.play = Button(f3, width=65, height=40, image=play_icon, text='播放', font=15, compound=LEFT)
         self.play.image = play_icon
-        self.play['command'] = self.playMovie
+        self.play['command'] = self.play1
         self.play.pack()
 
         self.f2 = Frame(self.master, height=40, width=65)
@@ -264,7 +287,7 @@ class Player(Client):
         self.getCategoryList()
         self.refreshPlayList()
 
-        self.fnt = ImageFont.truetype("C:\Windows\Fonts\simsun.ttc", 18)
+        # self.fnt = ImageFont.truetype("C:\Windows\Fonts\simsun.ttc", 18)
 
     def key_press(self, event):
         if event.keysym == 'p':
@@ -301,6 +324,7 @@ class Player(Client):
         #     pass
 
     def pickMovie(self, event):
+        self.memory = ''
         index = self.playlist.curselection()[0]
         movie_name = self.playlist.get(index)
         self.setupMovie(movie_name)
@@ -415,6 +439,7 @@ class Player(Client):
 
                         elif self.audio_frame_queue.top() < self.cur_frame:
                             while True:
+                                print(self.audio_frame_queue.top(), self.cur_frame)
                                 self.audio_frame_queue.pop()
                                 if self.audio_frame_queue.top() > self.cur_frame:
                                     break
@@ -457,9 +482,11 @@ class Player(Client):
             print("ended")
         except Exception as e:
             print("update crashed", str(e))
-
-        self.audio_player.stream.close()
-        self.audio_player.audio.terminate()
+        try:
+            self.audio_player.stream.close()
+            self.audio_player.audio.terminate()
+        except:
+            pass
         # self.sendRtspRequest(self.TEARDOWN)
 
     @qt_exception_wrapper
@@ -480,8 +507,12 @@ class Player(Client):
         self.playMovie(time_cur)
 
     @qt_exception_wrapper
-    def play(self):
-        self.playMovie()
+    def play1(self):
+        if self.memory != '':
+            self.playMovie(self.memory)
+            self.memory = ''
+        else:
+            self.playMovie()
 
     @qt_exception_wrapper
     def pause(self):
