@@ -20,6 +20,7 @@ class Server:
         self.rtp_socket = None
         self.plp_socket = None
         self.rtsp_socket = None
+        self.packet_size = 48000
         self.clients = [None] * 100  # stores the client info
 
         self.openRtp()  # open rtp port
@@ -184,8 +185,23 @@ class Server:
                     if frame_no != -1 and audio_frame_no != -1:
                         # print(audio_frame_no, len(audio_data))
                         rtpPacket = RtpPacket()
-                        rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, data)
+                        length = len(data)
+                        print(length)
+                        start = 0
+                        while start + self.packet_size < length:
+                            this_data = data[start:start+self.packet_size]
+                            rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, this_data)
+                            print("leng", len(this_data))
+                            self.sendPacket(rtpPacket, i)
+                            time.sleep(0.01)  # wait for 0.01 second
+                            start += self.packet_size
+                        this_data = data[start:length]
+                        rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, this_data)
+                        print("leng", len(this_data))
                         self.sendPacket(rtpPacket, i)
+
+
+
                         time.sleep(0.01)  # wait for 0.01 second
                         audio_packet = RtpPacket()
 
@@ -252,7 +268,12 @@ class Server:
                     audio_frame_rate = str(audio_capturer.frame_rate)
                     audio_frame_rate = 'audio_frame_rate=' + audio_frame_rate + '\n'
                     audio_sample_width = str(audio_capturer.sample_width)
-                    audio_sample_width = 'audio_sample_width=' + audio_sample_width
+                    audio_sample_width = 'audio_sample_width=' + audio_sample_width + '\n'
+                    if self.clients[i]['subtitle_file'] is not None:
+                        has_subtitle = '1'
+                    else:
+                        has_subtitle = '0'
+                    has_subtitle = 'has_subtitle=' + has_subtitle
                     reply = 'RTSP/1.0 200 OK\n' + \
                             'CSeq: ' + str(rtsp_seq) + '\n' + \
                             'Session: ' + str(session) + '\n'
@@ -261,6 +282,7 @@ class Server:
                     reply += audio_channels
                     reply += audio_frame_rate
                     reply += audio_sample_width
+                    reply += has_subtitle
 
             elif cmd == 'PLAY':
                 session = int(lines[2].split(' ')[-1])

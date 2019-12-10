@@ -53,7 +53,9 @@ class Client:
 
 
         # current video and audio parameters
+        self.packet_data = b''
         self.frameNbr = 0
+        self.video_frame_no = 0
         self.video_frame_count = 0
         self.video_fps = 0
         self.audio_channels = 0
@@ -94,7 +96,7 @@ class Client:
         return play_list
 
     @qt_exception_wrapper
-    def setupMovie(self, movie_name):
+    def setupMovie(self, movie_name='test.mp4'):
         """Setup button handler."""
         if self.state == self.INIT or self.state == self.READY:
             self.rtsp_seq = 0
@@ -134,6 +136,7 @@ class Client:
     @qt_exception_wrapper
     def exitClient(self):
         self.sendRtspRequest(self.TEARDOWN)
+        self.master.destroy()  # Close the gui window
 
     @qt_exception_wrapper
     def pauseMovie(self):
@@ -159,7 +162,7 @@ class Client:
         """Listen for RTP packets."""
         while True:
             try:
-                data = self.rtpSocket.recv(60000)
+                data = self.rtpSocket.recv(50000)
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
@@ -169,13 +172,24 @@ class Client:
                     #if currFrameNbr > self.frameNbr: # Discard the late packet
                     # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
                     if rtpPacket.payloadType() == 26:
-                        self.collectFrame(rtpPacket.getPayload(), self.frameNbr)
+                        if self.video_frame_no == rtpPacket.seqNum():
+
+                            self.packet_data += rtpPacket.getPayload()
+                        else:
+                            self.video_frame_no = rtpPacket.seqNum()
+                            self.collectFrame(self.packet_data, self.video_frame_no-1)
+                            self.packet_data = rtpPacket.getPayload()
                     elif rtpPacket.payloadType() == 10:
                         self.collectAudioFrame(rtpPacket.getPayload(), self.frameNbr)
                     elif rtpPacket.payloadType() == 37:
                         self.collectSubtitle(rtpPacket.getPayload(), self.frameNbr)
+                else:
+                    if self.packet_data:
+                        self.collectFrame(self.packet_data, self.video_frame_no)
+                    break
 
-            except:
+            except Exception as e:
+                print("rtpcrashed", str(e))
                 # Stop listening upon requesting PAUSE or TEARDOWN
                 if self.playEvent.isSet():
                     break
@@ -221,6 +235,7 @@ class Client:
         self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.rtspSocket.connect((self.server_addr, self.server_rtsp_port))
+            print(self.rtspSocket)
         except Exception as e:
             print(str(e))
 
@@ -288,11 +303,12 @@ class Client:
             self.requestSent = self.TEARDOWN
         else:
             return
-
+        print('\nData sent:\n' + request)
+        print(self.rtspSocket)
         # Send the RTSP request using rtspSocket.
         self.rtspSocket.send(request.encode())
 
-        print('\nData sent:\n' + request)
+
 
     @qt_exception_wrapper
     def recvRtspReply(self):
@@ -313,7 +329,8 @@ class Client:
                 #     self.rtspSocket.shutdown(socket.SHUT_RDWR)
                 #     self.rtspSocket.close()
                 #     break
-            except:
+            except Exception as e:
+                print(str(e))
                 self.rtspSocket.shutdown(socket.SHUT_RDWR)
                 self.rtspSocket.close()
                 # self.rtpSocket.shutdown(socket.SHUT_RDWR)
@@ -326,7 +343,7 @@ class Client:
         """Parse the RTSP reply from the server."""
         lines = str(data).split('\n')
         seqNum = int(lines[1].split(' ')[1])
-
+        print(lines)
         # Process only if the server reply's sequence number is the same as the request's
         if seqNum == self.rtsp_seq:
             session = int(lines[2].split(' ')[1])
@@ -349,6 +366,9 @@ class Client:
                         self.audio_channels = int(lines[5].split('=')[-1])
                         self.audio_frame_rate = int(lines[6].split('=')[-1])
                         self.audio_sample_width = int(lines[7].split('=')[-1])
+                        has_subtitle = int(lines[8].split('=')[-1])
+                        # if has_subtitle:
+                        #     self.SubtitleBox.addItem("字幕1", '1')
                         self.time_delay = round(1 / self.video_fps, 3)
                         self.modified_time_delay = self.time_delay
                         self.audio_player = AudioPlayer(self.audio_channels, self.audio_frame_rate,

@@ -52,6 +52,9 @@ class Ui_Player(object):
         self.PlaySpeedBox = QtWidgets.QComboBox(self.horizontalLayoutWidget)
         self.PlaySpeedBox.setObjectName("PlaySpeedBox")
         self.horizontalLayout.addWidget(self.PlaySpeedBox)
+        self.SubtitleBox = QtWidgets.QComboBox(self.horizontalLayoutWidget)
+        self.SubtitleBox.setObjectName("SubtitleBox")
+        self.horizontalLayout.addWidget(self.SubtitleBox)
         self.ExitFullScreenBtn = QtWidgets.QPushButton(Player)
         self.ExitFullScreenBtn.setGeometry(QtCore.QRect(720, 0, 93, 28))
         self.ExitFullScreenBtn.setText("")
@@ -107,6 +110,7 @@ class Ui_Player(object):
         self.SubtitleText = QtWidgets.QLabel(Player)
         self.SubtitleText.setGeometry(QtCore.QRect(91, 564, 691, 61))
         self.SubtitleText.setText("")
+        self.SubtitleText.setAlignment(QtCore.Qt.AlignCenter)
         self.SubtitleText.setObjectName("SubtitleText")
 
         self.retranslateUi(Player)

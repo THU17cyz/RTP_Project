@@ -74,7 +74,7 @@ class PlayerWindow(QWidget, Ui_Player):
         self.PlaySpeedBox.addItem("2倍速", self.DOUBLE_SPEED)
         self.PlaySpeedBox.addItem("0.5倍速", self.HALF_SPEED)
         self.play_speed = self.PlaySpeedBox.currentData()
-        self.PlaySpeedBox.currentIndexChanged.connect(self.playSpeedChanged)
+        self.PlaySpeedBox.currentIndexChanged.connect(lambda: self.playSpeedChanged())
 
         # button initiations
         self.PlayBtn.setFixedWidth(28)
@@ -110,7 +110,16 @@ class PlayerWindow(QWidget, Ui_Player):
         self.SearchKeyword.returnPressed.connect(lambda: self.refreshPlayList(self.SearchKeyword.text()))
         self.SearchButton.clicked.connect(lambda: self.refreshPlayList(self.SearchKeyword.text()))
 
+        self.SubtitleBox.addItem('无', 0)
+        self.SubtitleBox.currentIndexChanged.connect(lambda: self.change_subtitle())
         # self.CategoryComboBox.currentIndexChanged.connect(self.refreshPlayList)
+
+        self.SubtitleText.setStyleSheet("color:red; text-align:right; font-size: 18px; font-weight: bold; font-family: Times New Roman;")
+
+    def change_subtitle(self):
+        self.has_subtitle = self.SubtitleBox.currentData()
+        if not self.has_subtitle:
+            self.SubtitleText.setText('')
 
     @qt_exception_wrapper
     def playBackground(self, geometry):
@@ -131,7 +140,7 @@ class PlayerWindow(QWidget, Ui_Player):
 
     @qt_exception_wrapper
     def playFrame(self, geometry):
-        print("print")
+        #print("print")
         self.lock = True
         if self.img_path is None:
             return
@@ -270,15 +279,18 @@ class PlayerWindow(QWidget, Ui_Player):
 
     @qt_exception_wrapper
     def bufferShowing(self):
-        i = 0
-        while True:
-            print("wula")
-            if self.buffering:
-                self.bufferIcon.setStyleSheet("QLabel{border-image: url(icons/buffer%d.png)}" % (i+1))
-                i += 1
-                i %= 5
-                time.sleep(0.1)
-            else:
-                break
+        try:
+            i = 0
+            while True:
+                # print("wula")
+                if self.buffering:
+                    self.bufferIcon.setStyleSheet("QLabel{border-image: url(icons/buffer%d.png)}" % (i + 1))
+                    i += 1
+                    i %= 5
+                    time.sleep(0.1)
+                else:
+                    break
+        except Exception as e:
+            print("show buffer crahsed", str(e))
 
 

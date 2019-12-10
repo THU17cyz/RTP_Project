@@ -95,6 +95,9 @@
     <item>
      <widget class="QComboBox" name="PlaySpeedBox"/>
     </item>
+    <item>
+     <widget class="QComboBox" name="SubtitleBox"/>
+    </item>
    </layout>
   </widget>
   <widget class="QPushButton" name="ExitFullScreenBtn">
@@ -195,6 +198,9 @@
    </property>
    <property name="text">
     <string/>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
    </property>
   </widget>
  </widget>
