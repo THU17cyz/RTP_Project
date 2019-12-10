@@ -8,7 +8,7 @@ from tkinter import *
 import tkinter.messagebox as tkMessageBox
 from tkinter.ttk import Combobox
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageFile
 from PyQt5.QtCore import QThread
 
 from audio_player import AudioPlayer
@@ -18,6 +18,8 @@ from PyQt5.QtWidgets import QApplication
 from Client import Client
 import ctypes
 from PyQt5.QtWidgets import QMessageBox
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 winmm = ctypes.WinDLL('winmm')
 winmm.timeBeginPeriod(1)
@@ -61,6 +63,11 @@ class FrameQueue:
         self.length -= 1
         return frame, frame_no
 
+    def top(self):
+        if self.length == 0:
+            return 99999999
+        return self.queue[self.start_ptr][1]
+
     def jump(self):
         self.start_ptr = self.end_ptr
         self.length = 0
@@ -85,6 +92,7 @@ class Player(Client):
         self.last_play = None  # the video player last time
         self.play_end = False  # if a video is completely played, set this to True
         self.play_speed = 1
+        self.cur_frame = 0
 
         # self.Slider.sliderPressed.connect(lambda: self.sliderPressEvent())
         # self.Slider.sliderReleased.connect(lambda: self.sliderReleaseEvent())
@@ -102,44 +110,60 @@ class Player(Client):
 
     def createWidgets(self):
         """Build GUI."""
-        # Create Setup button
         self.full_screen = False
+
         self.origin_height = 600
         self.origin_width = 800
-        self.full_height = self.master.winfo_screenheight()
 
-        # getting screen's width in pixels
+        self.full_height = self.master.winfo_screenheight()
         self.full_width = self.master.winfo_screenwidth()
 
         self.master.title("这是一个播放器")
         self.master.geometry('1200x700')
+        self.master.resizable(0, 0)
+        self.master.bind_all('<KeyPress>', self.key_press)
 
-        play_icon = ImageTk.PhotoImage(file='icons/play.png')
-        f1 = Frame(self.master, height=30, width=90)
+        full_icon = Image.open('icons/fullscreen.png')
+        full_icon = full_icon.resize((25, 25))
+        full_icon = ImageTk.PhotoImage(full_icon)
+        play_icon = Image.open('icons/play.png')
+        play_icon = play_icon.resize((25, 25))
+        play_icon = ImageTk.PhotoImage(play_icon)
+        pause_icon = Image.open('icons/pause.png')
+        pause_icon = pause_icon.resize((25, 25))
+        pause_icon = ImageTk.PhotoImage(pause_icon)
+
+        f1 = Frame(self.master, height=40, width=65)
+        f1.pack_propagate(0)
+        f1.place(x=210, y=650)
+        self.setup = Button(f1, width=65, height=40, text = '初始化', font=15)
+        self.setup['command'] = self.setupMovie
+        self.setup.pack()
+
+        f1 = Frame(self.master, height=40, width=65)
         f1.pack_propagate(0)  # don't shrink
         # f.pack()
         f1.place(x=0, y=650)
-        self.setup = Button(f1, width=30, height=30)
-        # self.setup.config(image=play_icon)
-        # # self.setup.image = play_icon
-        #self.setup["text"] = "Setup"
-        self.setup["command"] = self.setupMovie
-        #self.setup.grid(row=2, column=0, padx=2, pady=2)
-        #self.setup.place(x=0, y=300, width=30, height=30)
-        self.setup.pack(fill=BOTH, expand=1)
+        self.setup = Button(f1, width=65, height=40, image=full_icon, text='全屏', font=15, compound=LEFT)
+        self.setup.image = full_icon
+        self.setup['command'] = self.setFullScreen
+        self.setup.pack()
 
-        # Create Play button
-        self.start = Button(f1)
-        self.start["text"] = "Play"
-        self.start["command"] = self.playMovie
-        self.start.pack(fill=BOTH)
-        #self.start.grid(row=2, column=1, padx=2, pady=2)
+        f3 = Frame(self.master, height=40, width=65)
+        f3.pack_propagate(0)
+        f3.place(x=70, y=650)
+        self.play = Button(f3, width=65, height=40, image=play_icon, text='播放', font=15, compound=LEFT)
+        self.play.image = play_icon
+        self.play['command'] = self.playMovie
+        self.play.pack()
 
-        # Create Pause button
-        self.pause = Button(self.master, width=20, padx=3, pady=3)
-        self.pause["text"] = "Pause"
-        self.pause["command"] = self.pauseMovie
-        self.pause.grid(row=2, column=2, padx=2, pady=2)
+        self.f2 = Frame(self.master, height=40, width=65)
+        self.f2.pack_propagate(0)
+        self.f2.place(x=140, y=650)
+        self.pause = Button(self.f2, width=65, height=40, image=pause_icon, text='暂停', font=15, compound=LEFT)
+        self.pause.image = pause_icon
+        self.pause['command'] = self.pauseMovie
+        self.pause.pack()
 
         # Create Teardown button
         self.teardown = Button(self.master, width=20, padx=3, pady=3)
@@ -147,65 +171,100 @@ class Player(Client):
         self.teardown["command"] = self.exitClient
         self.teardown.grid(row=2, column=3, padx=2, pady=2)
 
-        self.f = Frame(self.master, height=600, width=800)
-        self.f.pack_propagate(0)  # don't shrink
-        #f.pack()
-        self.f.place(x=0, y=0)
-        #f.grid(row=0, rowspan=2, column=0, columnspan=4, padx=5, pady=5)
-
-        # self.bg = Label(f, width=800, height=600, bg='black')
-        # #self.bg.grid(row=0, rowspan=2, column=0, columnspan=4, padx=5, pady=5)
-        # self.bg.pack(fill=BOTH, expand=1)
-        # Create a label to display the movie
-        self.label = Label(self.f, width=800, height=600, bg='black')
-        #self.label.grid(row=0, rowspan=2, column=0, columnspan=4, padx=5, pady=5)
-        self.label.pack(fill=BOTH, expand=1)
-
         f2 = Frame(self.master, height=40, width=800)
-        f2.pack_propagate(0)  # don't shrink
-        # f.pack()
+        f2.pack_propagate(0)
         f2.place(x=0, y=600)
-        self.slider = Scale(f2, orient=HORIZONTAL, length = 800)
-        #self.slider.grid(row=3, column=0, columnspan=4)
+        self.slider = Scale(f2, orient=HORIZONTAL, length=800)
         self.slider.pack(fill=BOTH, expand=1)
+        self.slider['state'] = 'disabled'
         self.slider.bind("<ButtonPress>", self.sliderPressEvent)
         self.slider.bind("<ButtonRelease>", self.sliderReleaseEvent)
 
-        self.speed_combobox = Combobox(self.master)
+        f = Frame(self.master, height=40, width=150)
+        f.pack_propagate(0)
+        f.place(x=300, y=650)
+        self.speed_combobox = Combobox(f, state='readonly')
         self.speed_combobox['values'] = ('1倍速', '2倍速', '0.5倍速')
         self.speed_combobox.current(0)
-        self.speed_combobox.grid(row=4, column=2, columnspan=1)
+        self.speed_combobox.pack()
         self.speed_combobox.bind("<<ComboboxSelected>>", self.calculate_true_time_delay)
 
-        self.subtitle_combobox = Combobox(self.master)
-        self.subtitle_combobox['values'] = ('无', '默认')
-        self.subtitle_combobox.current(1)
-        self.subtitle_combobox.grid(row=4, column=3, columnspan=1)
+        f = Frame(self.master, height=20, width=150)
+        f.pack_propagate(0)
+        f.place(x=820, y=0)
+        self.category_combobox = Combobox(f, state='readonly')
+        self.category_combobox.pack()
 
-        # self.search_frame = Frame(self.master)
-        # self.search_frame.grid(row=0, column=4)
-        self.search_text = Label(self.master, text='搜索：')
-        #self.search_text.pack(side='left')
-        self.search_text.grid(column=4, row=0, rowspan=1)
+        f = Frame(self.master, height=40, width=150)
+        f.pack_propagate(0)
+        f.place(x=450, y=650)
+        self.subtitle_combobox = Combobox(f, state='readonly')
+        self.subtitle_combobox['values'] = ('无')
+        self.subtitle_combobox.current(0)
+        self.subtitle_combobox.pack()
 
-        self.search_entry = Entry(self.master)
-        #self.search_entry.pack(side='left')
-        self.search_entry.grid(column=5, row=0, rowspan=1)
+        f = Frame(self.master, height=40, width=50)
+        f.pack_propagate(0)
+        f.place(x=820, y=20)
+        self.search_text = Label(f, text='搜索：')
+        self.search_text.pack()
 
-        self.search_button = Button(self.master)
-        # self.search_button.pack(side='left')
-        self.search_button["text"] = "搜索"
-        self.search_button["command"] = self.retrievePlayList
-        self.search_button.grid(row=0, column=6, padx=2, pady=2)
+        f = Frame(self.master, height=40, width=150)
+        f.pack_propagate(0)
+        f.place(x=870, y=20)
+        self.search_entry = Entry(f)
+        self.search_entry.pack()
 
-        self.playlist = Listbox(self.master)
-        self.playlist.grid(row=1, column=4, columnspan=3)
+        f = Frame(self.master, height=40, width=50)
+        f.pack_propagate(0)
+        f.place(x=1030, y=20)
+        self.search_button = Button(f, text="搜索")
+        self.search_button["command"] = lambda: self.refreshPlayList(keyword=self.search_entry.get())
+        self.search_button.pack()
 
-        self.historylist = Listbox(self.master)
-        self.historylist.grid(row=2, column=4, columnspan=3)
+        f = Frame(self.master, height=300, width=360)
+        f.pack_propagate(0)
+        f.place(x=820, y=80)
+        self.playlist = Listbox(f, width=360, height=300)
+        self.playlist.pack()
+        self.playlist.bind('<Double-Button-1>', self.pickMovie)
 
-        self.master.bind_all('<KeyPress>', self.key_press)
+        f = Frame(self.master, height=280, width=360)
+        f.pack_propagate(0)
+        f.place(x=820, y=400)
+        self.historylist = Listbox(f, width=360, height=280)
+        self.historylist.pack()
 
+        self.label_frame = Frame(self.master, height=600, width=800)
+        self.label_frame.pack_propagate(0)
+        self.label_frame.place(x=0, y=0)
+        self.label = Label(self.label_frame, width=800, height=600, bg='black')
+        # self.label['text'] = ''
+        # self.label['fg'] = 'red'
+        # self.label['anchor'] = S
+        # self.label['compound'] = TOP
+
+        self.label.pack(fill=BOTH, expand=1)
+
+        self.subtitle_frame = Frame(self.master, height=75, width=800)
+        self.subtitle_frame.pack_propagate(0)
+        self.subtitle_frame.place(x=0, y=525)
+        self.subtitlebg = Label(self.subtitle_frame, width=800, height=75, bg='black', fg='white')
+        self.subtitlebg.pack(fill=BOTH, expand=1)
+
+        # mycanvas = Canvas(self.master, width=600, height=150, bd=0, highlightthickness=0)
+        # mycanvas.create_rectangle(0, 0, 100, 40, fill="green")
+        # #mycanvas.pack(side="top", fill="both", expand=True)
+        # mycanvas.place(x=100, y=200)
+        # # mycanvas.config(bg='')
+        # text_canvas = mycanvas.create_text(10, 10, anchor="nw")
+        # mycanvas.itemconfig(text_canvas, text="Look no background! Thats new!")
+
+
+        self.getCategoryList()
+        self.refreshPlayList()
+
+        self.fnt = ImageFont.truetype("C:\Windows\Fonts\simsun.ttc", 18)
 
     def key_press(self, event):
         if event.keysym == 'p':
@@ -222,15 +281,29 @@ class Player(Client):
     def setFullScreen(self):
         self.full_screen = True
         self.master.attributes("-fullscreen", True)
-        self.f.configure(width=self.full_width, height=self.full_height)
-        # self.master.geometry("{0}x{1}+0+0".format(
-        #     self.master.winfo_screenwidth(), self.master.winfo_screenheight()))
+        self.label_frame.configure(width=self.full_width, height=self.full_height)
+        self.subtitle_frame.configure(width=self.full_width)
+        self.subtitle_frame.place(y=self.full_height-75)
+        # try:
+        #     self.updateFrame(self.video_frame_queue.queue[self.video_frame_queue.start_ptr-1][0])
+        # except:
+        #     pass
 
     def exitFullScreen(self):
         self.full_screen = False
         self.master.attributes("-fullscreen", False)
-        self.f.configure(width=self.origin_width, height=self.origin_height)
-        #self.master.geometry("1200x700")
+        self.label_frame.configure(width=self.origin_width, height=self.origin_height)
+        self.subtitle_frame.configure(width=self.origin_width)
+        self.subtitle_frame.place(y=self.origin_height-75)
+        # try:
+        #     self.updateFrame(self.video_frame_queue.queue[self.video_frame_queue.start_ptr-1][0])
+        # except:
+        #     pass
+
+    def pickMovie(self, event):
+        index = self.playlist.curselection()[0]
+        movie_name = self.playlist.get(index)
+        self.setupMovie(movie_name)
 
 
     def initNewMovie(self):
@@ -240,110 +313,153 @@ class Player(Client):
         self.subtitle = {}
         self.has_subtitle = 0
         self.last_frame_no = 0
+        self.cur_frame = 0
         self.lock = False
         self.rate = 1
+        try:
+            self.subtitle_combobox.delete(1)
+        except:
+            pass
         threading.Thread(target=self.updateMovie).start()
+        print("started new")
 
-    def collectFrame(self, image, frame_no):
+    def collectVideoFrame(self, image, frame_no):
         self.video_frame_queue.push(image, frame_no)
 
     def collectAudioFrame(self, sound, frame_no):
         self.audio_frame_queue.push(sound, frame_no)
 
     def collectSubtitle(self, subtitle, subtitle_no):
-        # self.subtitle.generateFrame2Subtitle(subtitle, subtitle_no)
-        print("heyyyyyyyyyyyyyyyyyy")
         subtitle_info = subtitle.decode('utf-8').split('\n', 1)
+        # for i in range(subtitle_no, subtitle_no+int(subtitle_info[0])):
+        #     self.subtitle[i] = subtitle_info[1]
         self.subtitle[subtitle_no] = subtitle_info[1]
         self.subtitle[subtitle_no+int(subtitle_info[0])] = ''
 
     def needBuffering(self):
-        video_need = self.video_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
-        audio_need = self.audio_frame_queue.isEmpty() and self.frameNbr != self.video_frame_count - 1
-
+        video_need = self.video_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count - 1
+        audio_need = self.audio_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count - 1
         return video_need or audio_need
-               # and self.video_frame_queue.last() != self.video_frame_count - 1 \
 
     def endBuffering(self):
+        # print(self.audio_frame_queue.last(), self.video_frame_queue.last())
         video_end = self.video_frame_queue.reachThresh() or \
                     self.video_frame_queue.last() == self.video_frame_count - 1
         audio_end = self.audio_frame_queue.reachThresh() or \
                     self.audio_frame_queue.last() == self.video_frame_count - 1
         return video_end and audio_end
 
-    def updateFrame(self, img):
+    def updateFrame(self, img, content=''):
         """Update the image file as video frame in the GUI."""
-        #img = Image.frombytes("L", (640, 480), img)
-        img = Image.open(io.BytesIO(img))
+        l = len(img)
+        try:
+            img = Image.open(io.BytesIO(img))
+        except Exception as e:
+            print(str(e), l)
+            return
         w = img.size[0]
         h = img.size[1]
-        nw = self.f.winfo_width()
-        nh =self.f.winfo_height()
+        # if not self.full_screen:
+        #     nh = self.origin_height
+        #     nw = self.origin_width
+        # else:
+        #     nw = self.full_width
+        #     nh = self.full_height - 100
+        nw = self.label_frame.winfo_width()
+        nh = self.label_frame.winfo_height()
         if w * 3 > h * 4:
             new_size = (nw, nw * h // w)
         else:
             new_size = (nh * w // h, nh)
         img = img.resize(new_size)
+        # try:
+        #     if content != '':
+        #
+        #         draw = ImageDraw.Draw(img)
+        #         width, height = img.size
+        #         text_size = draw.textsize(content, font=self.fnt)
+        #         draw.text((width // 2 - text_size[0] // 2, height - text_size[1]), content, fill="#ffffff", font=self.fnt)
+        # except:
+        #     pass
         photo = ImageTk.PhotoImage(img)
         self.label.configure(image=photo, height=img.size[1])
         self.label.image = photo
 
     @qt_exception_wrapper
     def updateMovie(self):
+        print("updateMovie")
         try:
             while True:
                 if self.play_end:
                     break
                 start = time.time()
+                # print(start)
                 if self.state == self.PLAYING:
+
                     if self.buffering and not self.endBuffering():
                         continue
-
                     self.buffering = False
-                    # self.bufferIcon.setVisible(False)
                     if not self.video_frame_queue.isEmpty() and not self.audio_frame_queue.isEmpty():
-
+                        # if self.cur_frame >= self.video_frame_count - 1:
+                        #     self.pauseMovie()
+                        #     while self.PLAYING:
+                        #         print("y")
+                        #         pass
+                        #     continue
+                        if self.cur_frame % 10 == 0:
+                            self.setSliderPosition(self.cur_frame)
                         c = time.time()
-                        sound, audio_frame_no = self.audio_frame_queue.pop()
-                        # print(audio_frame_no)
-                        # threading.Thread(target=playSound, args=(sound, 44100)).start()
-                        threading.Thread(target=self.audio_player.playAudio, args=(sound, self.rate)).start()
+                        if self.audio_frame_queue.top() == self.cur_frame:
+                            sound, audio_frame_no = self.audio_frame_queue.pop()
+                            threading.Thread(target=self.audio_player.playAudio, args=(sound, self.rate)).start()
+
+                        elif self.audio_frame_queue.top() < self.cur_frame:
+                            while True:
+                                self.audio_frame_queue.pop()
+                                if self.audio_frame_queue.top() > self.cur_frame:
+                                    break
 
                         d = time.time()
 
                         # print('playsound', round(d - c, 3))
-                        image, frame_no = self.video_frame_queue.pop()
-                        # dif = frame_no - self.last_frame_no
-                        print("diff?", audio_frame_no, frame_no)
-                        time_delay = self.modified_time_delay
-                        self.last_frame_no = frame_no
-                        self.updateFrame(image)
+                        if self.video_frame_queue.top() == self.cur_frame:
+                            image, frame_no = self.video_frame_queue.pop()
 
-                        self.setSliderPosition(frame_no)
+                            if self.subtitle_combobox.current() == 1 and frame_no in self.subtitle.keys():
+                                 self.subtitlebg['text'] = self.subtitle[frame_no]
+
+                            self.updateFrame(image)
+                        elif self.video_frame_queue.top() < self.cur_frame:
+                            while True:
+                                self.video_frame_queue.pop()
+                                if self.video_frame_queue.top() > self.cur_frame:
+                                    break
+                        print(self.video_frame_queue.top(), self.audio_frame_queue.top())
                         end = time.time()
                         interval = round(end - start, 3)
+                        time_delay = self.modified_time_delay
                         time_delay -= interval
-
-                        if self.has_subtitle:
-                            if frame_no in self.subtitle.keys():
-                                self.SubtitleText.setText(self.subtitle[frame_no])
-                        # print('slleep', time_delay)
+                        print('slleep', time_delay)
                         a = time.time()
                         time.sleep(max(time_delay, 0))
                         b = time.time()
-                        if frame_no == self.video_frame_count - 1:
-                            break
-                        # print('actuaaly', round(b - a, 3))
+                        self.cur_frame += 1
+                        print('actuaaly', round(b - a, 3))
                 if self.state == self.PLAYING and self.needBuffering() and not self.buffering:
                     print("found problem")
                     self.buffering = True
                     # self.bufferIcon.setVisible(True)
                     print("found again")
                     # threading.Thread(target=self.bufferShowing).start()
-                elif self.teardownAcked:
-                    break
+                # elif self.teardownAcked:
+                #     assert False
+                #     break
+            print("ended")
         except Exception as e:
             print("update crashed", str(e))
+
+        self.audio_player.stream.close()
+        self.audio_player.audio.terminate()
         # self.sendRtspRequest(self.TEARDOWN)
 
     @qt_exception_wrapper
@@ -356,9 +472,11 @@ class Player(Client):
         self.audio_frame_queue.jump()
         total = 100
         cur = self.slider.get()
-        time_total = self.video_frame_count
+        time_total = self.video_frame_count - 1
         time_cur = time_total * cur // total
         print(time_cur)
+        self.cur_frame = time_cur
+
         self.playMovie(time_cur)
 
     @qt_exception_wrapper
@@ -381,7 +499,6 @@ class Player(Client):
         calculate true time delay according to play speed
         :return: None
         """
-        print("selected")
         self.play_speed = int(self.speed_combobox.current())
         if self.play_speed == 0:
             self.rate = 1
@@ -393,22 +510,21 @@ class Player(Client):
             self.rate = 0.5
             self.modified_time_delay = round(2 / self.video_fps, 3)
 
-    def closeEvent(self, event):
-        self.exitAttempt(event)
-
     def refreshPlayList(self, keyword=''):
-        self.PlayList.clear()
-        play_list = self.retrievePlayList('SEARCH', keyword, self.CategoryComboBox.currentData())
-        print(self.CategoryComboBox.currentData()=='')
+        if self.playlist.size() > 0:
+            self.playlist.delete(0, self.playlist.size()-1)
+        play_list = self.retrievePlayList('SEARCH', keyword, self.category_combobox.get())
+        print(play_list)
+        i = 0
         for movie in play_list:
-            self.PlayList.addItem(movie)
+            self.playlist.insert(i, movie)
+            i += 1
 
     def getCategoryList(self):
-        self.CategoryComboBox.clear()
-        self.CategoryComboBox.addItem('all', '')
         category_list = self.retrievePlayList('CATEGORY')
-        for category in category_list:
-            self.CategoryComboBox.addItem(category, category)
+        category_list.append('所有')
+        self.category_combobox['values'] = tuple(category_list)
+        self.category_combobox.current(len(category_list)-1)
 
     def handler(self):
         """Handler on explicitly closing the GUI window."""
@@ -417,7 +533,6 @@ class Player(Client):
             self.exitClient()
         else: # When the user presses cancel, resume playing.
             self.playMovie()
-
 
 
 if __name__ == "__main__":

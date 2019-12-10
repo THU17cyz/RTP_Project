@@ -31,10 +31,10 @@ class Server:
         self.sessionPool = list(range(99, 0, -1))  # distributes session id
 
 
-        self.play_list = ['test.mp4', 'hires.mp4']  # all movies stored at the server
-        self.play2category = {'test.mp4': 'test1', 'hires.mp4': 'test2'}
+        self.play_list = ['test.mp4', 'hires.mp4', 'test1.mp4']  # all movies stored at the server
+        self.play2category = {'test.mp4': 'test1', 'hires.mp4': 'test2', 'test1.mp4': 'test2'}
         self.category_list = ['test1', 'test2']
-        self.has_subtitle =  {'test.mp4': 'test.srt', 'hires.mp4': None}
+        self.has_subtitle =  {'test.mp4': 'test.srt', 'hires.mp4': None, 'test1.mp4': 'test.srt'}
 
     # open rtp port
     def openRtp(self):
@@ -73,7 +73,7 @@ class Server:
                     keyword = data.split(' ')[1]
                     category = data.split(' ')[2]
                     all_category = False
-                    if category == '':
+                    if category == '所有':
                         all_category = True
                     res = []
                     for movie in self.play_list:
@@ -199,7 +199,10 @@ class Server:
                         rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, this_data)
                         print("leng", len(this_data))
                         self.sendPacket(rtpPacket, i)
-
+                        if frame_no == self.clients[i]['video_extractor'].frame_count - 1:
+                            rtpPacket = RtpPacket()
+                            rtpPacket.encode(2, 0, 0, 0, frame_no+1, 0, 26, 0, b'')
+                            self.sendPacket(rtpPacket, i)
 
 
                         time.sleep(0.01)  # wait for 0.01 second
