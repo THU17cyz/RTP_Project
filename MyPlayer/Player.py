@@ -176,7 +176,7 @@ class Player(Client):
         f3.place(x=75, y=650)
         self.play = Button(f3, width=65, height=40, image=play_icon, text='播放', font=15, compound=LEFT)
         self.play.image = play_icon
-        self.play['command'] = self.play1
+        self.play['command'] = self.playWhenLoaded
         self.play.pack()
 
         f2 = Frame(self.master, height=40, width=65)
@@ -357,8 +357,8 @@ class Player(Client):
 
     # four functions that judges whether buffer satisfies some condition
     def needBuffering(self):
-        video_need = self.video_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count
-        audio_need = self.audio_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count
+        video_need = self.video_frame_queue.isEmpty() and self.cur_frame < self.video_frame_count - 1
+        audio_need = self.audio_frame_queue.isEmpty() and self.cur_frame < self.video_frame_count - 1
         return video_need or audio_need
 
     def endBuffering(self):
@@ -406,90 +406,90 @@ class Player(Client):
                 # play reaches an end
                 if self.play_end:
                     break
+                # start timing
                 start = time.time()
+
+                # buffer control
                 if self.bufferAlmostFull():
                     self.sendRtspRequest(self.SET_PARAMETER, 'buffer_full', 'true')
                     self.buffer_control = True
                 if self.buffer_control and self.bufferNowSafe():
                     self.sendRtspRequest(self.SET_PARAMETER, 'buffer_full', 'false')
                     self.buffer_control = False
+
                 if self.state == self.PLAYING:
-                    # print(self.video_frame_queue.length)
+                    # last frame
                     if self.cur_frame == self.video_frame_count:
                         continue
+
+                    # buffering
                     if self.buffering and not self.endBuffering():
                         continue
                     elif self.buffering:
                         self.subtitlebg['text'] = ''
                     self.buffering = False
+
                     if not self.video_frame_queue.isEmpty() and not self.audio_frame_queue.isEmpty():
-                        # if self.cur_frame >= self.video_frame_count - 1:
-                        #     self.pauseMovie()
-                        #     while self.PLAYING:
-                        #         print("y")
-                        #         pass
-                        #     continue
+
+                        # set slider
                         if self.cur_frame % 10 == 0 or self.cur_frame == self.video_frame_count - 1:
                             self.setSliderPosition(self.cur_frame)
-                        c = time.time()
+
+                        # play audio
                         if self.audio_frame_queue.top() == self.cur_frame:
                             sound, audio_frame_no = self.audio_frame_queue.pop()
                             threading.Thread(target=self.audio_player.playAudio, args=(sound, self.rate)).start()
 
+                        # throw away not synchronized packets
                         elif self.audio_frame_queue.top() < self.cur_frame:
                             while True:
-                                print(self.audio_frame_queue.top(), self.cur_frame)
                                 self.audio_frame_queue.pop()
                                 if self.audio_frame_queue.top() > self.cur_frame:
                                     break
 
-                        d = time.time()
-
-                        # print('playsound', round(d - c, 3))
+                        # display video frame
                         if self.video_frame_queue.top() == self.cur_frame:
                             image, frame_no = self.video_frame_queue.pop()
 
+                            # shows subtitle
                             if self.subtitle_combobox.current() == 1 and frame_no in self.subtitle.keys():
                                  self.subtitlebg['text'] = self.subtitle[frame_no]
-
                             self.updateFrame(image)
+
+                        # throw away not synchronized packets
                         elif self.video_frame_queue.top() < self.cur_frame:
                             while True:
                                 self.video_frame_queue.pop()
                                 if self.video_frame_queue.top() > self.cur_frame:
                                     break
-                        #print(self.video_frame_queue.top(), self.audio_frame_queue.top())
+
                         end = time.time()
+
+                        # calculate time to sleep
                         interval = round(end - start, 3)
                         time_delay = self.modified_time_delay
                         time_delay -= interval
-                        #print('slleep', time_delay)
-                        a = time.time()
                         time.sleep(max(time_delay, 0))
-                        b = time.time()
+
                         self.cur_frame += 1
-                        #print('actuaaly', round(b - a, 3))
+
+                # start buffering!
                 if self.state == self.PLAYING and self.needBuffering() and not self.buffering \
                         and self.cur_frame != self.video_frame_count:
-                    print("found problem")
                     self.buffering = True
                     self.subtitlebg['text'] = '正在缓冲，请稍候...'
-                    # self.bufferIcon.setVisible(True)
-                    print("found again")
-                    # threading.Thread(target=self.bufferShowing).start()
-                # elif self.teardownAcked:
-                #     assert False
-                #     break
-            print("ended")
+
         except Exception as e:
             print("update crashed", str(e))
+
+        # release the audio player resources
         try:
             self.audio_player.stream.close()
             self.audio_player.audio.terminate()
         except:
             pass
-        # self.sendRtspRequest(self.TEARDOWN)
 
+    # slider events
     def sliderPressEvent(self, event):
         if self.slider['state'] == 'disabled':
             return
@@ -504,6 +504,8 @@ class Player(Client):
         cur = self.slider.get()
         time_total = self.video_frame_count - 1
         time_cur = time_total * cur // total
+        if time_cur == time_total:
+            time_cur -= 1
         self.cur_frame = time_cur
         self.playMovie(time_cur)
 
@@ -512,7 +514,8 @@ class Player(Client):
         value = frame_no * 100 // (self.video_frame_count - 1)
         self.slider.set(value)
 
-    def play1(self):
+    # play a movie: first check if the resource is already setup
+    def playWhenLoaded(self):
         if self.subtitlebg['text'] == '资源加载完成。':
             self.subtitlebg['text'] = ''
         if self.memory != '':
@@ -569,5 +572,3 @@ class Player(Client):
             self.exitClient()
         else:
             self.playMovie()
-
-

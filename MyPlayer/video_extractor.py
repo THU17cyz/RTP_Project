@@ -18,6 +18,7 @@ class VideoCapturer:
         :param pos: start position, if -1 then use current position
         :return: bytes of the captured frame
         """
+        print(self.frame_count, self.frame_no)
         if pos != -1:
             if pos >= self.frame_count:
                 return '', -1

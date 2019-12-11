@@ -5,8 +5,6 @@ import threading
 from audio_player import AudioPlayer
 from RtpPacket import RtpPacket
 import tkinter.messagebox as tkMessageBox
-from subtitle import Subtitle
-
 
 class Client:
     INIT = 0
@@ -54,9 +52,6 @@ class Client:
         self.cache_file = ''
         self.cache_extension = 'jpg'
 
-
-        # self.setupMovie(movie_name)
-
     def retrievePlayList(self, type, keyword='', category=''):
         """
         :param keyword: keyword to search
@@ -95,7 +90,7 @@ class Client:
             self.connectToServer()
             self.subtitlebg['text'] = '正在载入资源...'
             self.sendRtspRequest(self.SETUP, movie_name)
-        elif self.state != self.INIT:#lif self.state == self.PLAYING or self.state == self.READY:
+        elif self.state != self.INIT:
             self.pauseMovie()
             time.sleep(0.5)
             self.play_end = True
@@ -397,17 +392,10 @@ class Client:
                         # Flag the teardownAcked to close the socket.
                         self.teardownAcked = 1
 
-
+    # Open RTP socket binded to a specified port.
     def openRtpPort(self):
-        """Open RTP socket binded to a specified port."""
-        # Create a new datagram socket to receive RTP packets from the server
         self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-        # Set the timeout value of the socket to 0.5sec
-        # self.rtpSocket.settimeout(0.5)
-
         try:
-            # Bind the socket to the address using the RTP port given by the client user
             self.rtpSocket.bind(("", self.rtp_port))
         except Exception as e:
             print(str(e))
