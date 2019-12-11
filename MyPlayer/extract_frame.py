@@ -10,6 +10,7 @@ class VideoCapturer:
         self.frame_count = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))  # 7 is cv2.CAP_PROP_FRAME_COUNT
         self.fps = int(self.video.get(cv2.CAP_PROP_FPS))  # 5 is cv2.CAP_PROP_FPS
         self.frame_no = 0  # frame number starts from 0
+        self.resize_rate = 1
 
     def captureFrame(self, pos=-1):
         """
@@ -27,6 +28,10 @@ class VideoCapturer:
 
         success, image = self.video.read()
         if success:
+            if self.resize_rate != 1:
+                height, width = image.shape[:2]
+                new_size = (int(width * self.resize_rate), int(height * self.resize_rate))
+                image = cv2.resize(image, new_size)
             self.frame_no += 1
             data = cv2.imencode('.jpg', image)[1].tobytes()
             return data, self.frame_no - 1

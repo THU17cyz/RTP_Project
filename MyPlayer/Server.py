@@ -104,6 +104,7 @@ class Server:
                            'addr': addr[0],
                            'seq': 1,
                            'sending': False,
+                           'buffer_full': False,
                            'frame_num': 0}
             i = self.vacancy.pop()
             self.clients[i] = client_info
@@ -128,6 +129,11 @@ class Server:
             except Exception as e:
                 print('rtsp', str(e))
                 break
+        try:
+            self.clients[i]['video_extractor'].releaseVideo()
+        except:
+            pass
+        self.clients[i]['video_extractor'] = None
 
     def setupMediaExtractor(self, i):
         movie_name = self.clients[i]['movie_name']
@@ -148,7 +154,7 @@ class Server:
 
     def sendRtp(self, i):
         while True:
-            if self.clients[i]['sending']:
+            if self.clients[i]['sending'] and not self.clients[i]['buffer_full']:
                 try:
 
                     # frame_num = self.clients[i]['frame_num']
@@ -186,18 +192,18 @@ class Server:
                         # print(audio_frame_no, len(audio_data))
                         rtpPacket = RtpPacket()
                         length = len(data)
-                        print(length)
+                        #print(length)
                         start = 0
                         while start + self.packet_size < length:
                             this_data = data[start:start+self.packet_size]
                             rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, this_data)
-                            print("leng", len(this_data))
+                            #print("leng", len(this_data))
                             self.sendPacket(rtpPacket, i)
                             time.sleep(0.01)  # wait for 0.01 second
                             start += self.packet_size
                         this_data = data[start:length]
                         rtpPacket.encode(2, 0, 0, 0, frame_no, 0, 26, 0, this_data)
-                        print("leng", len(this_data))
+                        #print("leng", len(this_data))
                         self.sendPacket(rtpPacket, i)
                         if frame_no == self.clients[i]['video_extractor'].frame_count - 1:
                             rtpPacket = RtpPacket()
@@ -223,7 +229,7 @@ class Server:
                                 self.sendPacket(subtitle_packet, i)
 
                         self.clients[i]['frame_num'] = frame_no + 1
-                        print(frame_no)
+                        #print(frame_no)
                 except Exception as e:
                     print(str(e))
                     break
@@ -286,6 +292,28 @@ class Server:
                     reply += audio_frame_rate
                     reply += audio_sample_width
                     reply += has_subtitle
+
+            elif cmd == 'SET_PARAMETER':
+                session = int(lines[2].split(' ')[-1])
+                if session == self.clients[i]['session']:
+                    line = lines[3].split(': ')
+                    param, val = line[0], line[1]
+                    if param == 'buffer_full':
+                        if val == 'true':
+                            self.clients[i]['buffer_full'] = True
+                        else:
+                            self.clients[i]['buffer_full'] = False
+                    elif param == 'compress':
+                        try:
+                            if val == '1':
+                                self.clients[i]['video_extractor'].resize_rate = 1
+                            elif val == '2':
+                                self.clients[i]['video_extractor'].resize_rate = 0.7
+                            else:
+                                self.clients[i]['video_extractor'].resize_rate = 0.5
+                        except:
+                            pass
+                return
 
             elif cmd == 'PLAY':
                 session = int(lines[2].split(' ')[-1])

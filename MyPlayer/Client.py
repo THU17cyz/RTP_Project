@@ -5,6 +5,7 @@ import socket
 import threading
 from audio_player import AudioPlayer
 from RtpPacket import RtpPacket
+import tkinter.messagebox as tkMessageBox
 from subtitle import Subtitle
 
 from PyQt5.QtWidgets import QMessageBox
@@ -33,6 +34,7 @@ class Client:
     PAUSE = 2
     TEARDOWN = 3
     DESCRIBE = 4
+    SET_PARAMETER = 5
 
     # Initiation..
     def __init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name):
@@ -96,6 +98,9 @@ class Client:
     @qt_exception_wrapper
     def setupMovie(self, movie_name='test.mp4'):
         """Setup button handler."""
+        if self.rtsp_running and self.state == self.INIT:
+            tkMessageBox.showinfo("提示", "载入资源中无法切换，请稍候...")
+            return
         self.historylist.insert(0, movie_name)
         if self.historylist.size() > 15:
             self.historylist.delete(15)
@@ -104,7 +109,7 @@ class Client:
             self.movie_name = movie_name
             self.initNewMovie()
             self.connectToServer()
-
+            self.subtitlebg['text'] = '正在载入资源...'
             self.sendRtspRequest(self.SETUP, movie_name)
         elif self.state != self.INIT:#lif self.state == self.PLAYING or self.state == self.READY:
             self.pauseMovie()
@@ -125,7 +130,7 @@ class Client:
             self.rtsp_seq = 0
             self.initNewMovie()
             self.connectToServer()
-            print("setup")
+            self.subtitlebg['text'] = '正在载入资源...'
             self.sendRtspRequest(self.SETUP, movie_name)
 
     @qt_exception_wrapper
@@ -134,7 +139,11 @@ class Client:
 
         if self.rtsp_running:
             self.play_end = True
-            self.sendRtspRequest(self.TEARDOWN)
+            if self.state == self.INIT:
+                # self.rtspSocket.shutdown(socket.SHUT_RDWR)
+                self.rtspSocket.close()
+            else:
+                self.sendRtspRequest(self.TEARDOWN)
             self.play_record[self.movie_name] = self.cur_frame
             if not os.path.exists(os.path.dirname(self.record_file)):
                 os.mkdir(os.path.dirname(self.record_file))
@@ -268,6 +277,18 @@ class Client:
             # Keep track of the sent request.
             self.requestSent = self.DESCRIBE
 
+        elif requestCode == self.SET_PARAMETER:
+            self.rtsp_seq += 1
+
+            # Write the RTSP request to be sent.
+            request = 'SET_PARAMETER ' + args[0] + ' RTSP/1.0\n' + \
+                      'CSeq: ' + str(self.rtsp_seq) + '\n' + \
+                      'Session: ' + str(self.sessionId) + '\n' + \
+                      args[0] + ': ' + args[1]
+
+            # Do not keep track of the sent request, or it may interfere
+            # self.requestSent = self.SET_PARAMETER
+
         # Play request
         elif requestCode == self.PLAY and self.state == self.READY:
             print(args)
@@ -364,6 +385,8 @@ class Client:
                         self.audio_frame_rate = int(lines[6].split('=')[-1])
                         self.audio_sample_width = int(lines[7].split('=')[-1])
                         has_subtitle = int(lines[8].split('=')[-1])
+                        if '默认' in self.subtitle_combobox['values']:
+                            self.subtitle_combobox.delete(0)
                         if has_subtitle:
                             self.has_subtitle = True
                             self.subtitle_combobox['values'] += ('默认',)
@@ -373,6 +396,11 @@ class Client:
                                                         self.audio_sample_width)
                         self.state = self.READY
                         self.slider['state'] = 'normal'
+                        if self.memory != '':
+                            self.setSliderPosition(self.memory)
+                        self.subtitlebg['text'] = '资源加载完成。'
+                    elif self.requestSent == self.SET_PARAMETER:
+                        pass
                     elif self.requestSent == self.PLAY:
                         print("hey")
                         self.state = self.PLAYING
