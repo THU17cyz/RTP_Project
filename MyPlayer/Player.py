@@ -1,24 +1,17 @@
 import io
 import os
-import sys
 import time
 import threading
 
 from tkinter import *
-# from tkinter.ttk import *
 import tkinter.messagebox as tkMessageBox
 from tkinter.ttk import Combobox
 
-from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageFile
-from PyQt5.QtCore import QThread
+from PIL import Image, ImageTk, ImageFile
 
 from audio_player import AudioPlayer
-from subtitle import Subtitle
-from pyqt5_ui import PlayerWindow
-from PyQt5.QtWidgets import QApplication
 from Client import Client
 import ctypes
-from PyQt5.QtWidgets import QMessageBox
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -26,26 +19,19 @@ winmm = ctypes.WinDLL('winmm')
 winmm.timeBeginPeriod(1)
 
 
-def qt_exception_wrapper(func):
-    def wrapper(self, *args, **kwargs):
-        try:
-            func(self, *args, **kwargs)
-        except Exception as e:
-            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
-                QMessageBox.Yes, QMessageBox.Yes)
-    return wrapper
-
-
 class FrameQueue:
-    def __init__(self, capacity, thresh=100, full_thresh=300, safe_thresh=200):
+    """
+    this class acts as a buffer
+    """
+    def __init__(self, capacity, thresh=100, full_thresh=1000, safe_thresh=500):
         self.capacity = capacity  # maximum length of queue
-        self.queue = [None] * self.capacity
-        self.length = 0
-        self.start_ptr = 0
-        self.end_ptr = 0
-        self.thresh = thresh
-        self.full_thresh = full_thresh
-        self.safe_thresh = safe_thresh
+        self.queue = [None] * self.capacity  # stores information
+        self.length = 0  # length
+        self.start_ptr = 0  # start position
+        self.end_ptr = 0  # end position
+        self.thresh = thresh  # a movie can be played if length > thresh
+        self.full_thresh = full_thresh  # server speed should be controlled if length > full_thresh
+        self.safe_thresh = safe_thresh  # server speed should be unconstrained if length < safe_thresh
 
     def isEmpty(self):
         return self.length == 0
@@ -53,18 +39,23 @@ class FrameQueue:
     def isFull(self):
         return self.length == self.capacity
 
+    def reachThresh(self):
+        return self.length > self.thresh
+
     def almostFull(self):
         return self.length > self.full_thresh
 
     def safeNow(self):
         return self.length <= self.safe_thresh
 
+    # enter queue
     def push(self, frame, frame_no):
         self.queue[self.end_ptr] = (frame, frame_no)
         self.end_ptr += 1
         self.end_ptr %= self.capacity
         self.length += 1
 
+    # leave queue and dump the data
     def pop(self):
         frame, frame_no = self.queue[self.start_ptr]
         self.queue[self.start_ptr] = None
@@ -73,18 +64,26 @@ class FrameQueue:
         self.length -= 1
         return frame, frame_no
 
+    # get the first element
     def top(self):
         if self.length == 0:
             return 99999999
         return self.queue[self.start_ptr][1]
 
+    # skip to end position, releasing the data skipped
     def jump(self):
+        if self.end_ptr > self.start_ptr:
+            for i in range(self.start_ptr, self.end_ptr):
+                self.queue[i] = None
+        else:
+            for i in range(self.start_ptr, self.capacity):
+                self.queue[i] = None
+            for i in range(0, self.end_ptr):
+                self.queue[i] = None
         self.start_ptr = self.end_ptr
         self.length = 0
 
-    def reachThresh(self):
-        return self.length > self.thresh
-
+    # get the frame number of the last element
     def last(self):
         if self.start_ptr == self.end_ptr:
             return None
@@ -95,30 +94,24 @@ class FrameQueue:
 
 
 class Player(Client):
-    def __init__(self, master, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name):
-        Client.__init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name)
-        # PlayerWindow.__init__(self)
-        self.playlist = []  # all the videos which can be played
-        self.last_play = None  # the video player last time
+    """
+    the Player class, inherits from Client
+    combines GUI and logic
+    """
+    def __init__(self, master, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port):
+        Client.__init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port)
         self.play_end = False  # if a video is completely played, set this to True
-        self.play_speed = 1
-        self.cur_frame = 0
-        self.record_file = 'record/record.txt'
-        self.play_record = {}
+        self.play_speed = 0  # play speed option
+        self.cur_frame = 0  # current frame played
+        self.record_file = 'record/record.txt'  # where to store the record file
+        self.play_record = {}  # play record, used for transmission resume
 
-
-        # self.Slider.sliderPressed.connect(lambda: self.sliderPressEvent())
-        # self.Slider.sliderReleased.connect(lambda: self.sliderReleaseEvent())
-        # self.PlayBtn.clicked.connect(lambda: self.play())
-        # self.PauseBtn.clicked.connect(lambda: self.pause())
-        # self.closeEvent = self.closeEvent
-
-        # self.show()
-        # self.getCategoryList()
-        # self.refreshPlayList()
+        # initiates GUI
         self.master = master
         self.master.protocol("WM_DELETE_WINDOW", self.handler)
         self.createWidgets()
+
+        # reads record
         if os.path.exists(self.record_file):
             with open(self.record_file, "r") as f:
                 lines = f.read().split('\n')
@@ -141,10 +134,10 @@ class Player(Client):
         else:
             self.memory = ''
 
-
-
     def createWidgets(self):
-        """Build GUI."""
+        """
+        Build GUI.
+        """
         self.full_screen = False
 
         self.origin_height = 600
@@ -158,6 +151,7 @@ class Player(Client):
         self.master.resizable(0, 0)
         self.master.bind_all('<KeyPress>', self.key_press)
 
+        # some icons
         full_icon = Image.open('icons/fullscreen.png')
         full_icon = full_icon.resize((25, 25))
         full_icon = ImageTk.PhotoImage(full_icon)
@@ -168,21 +162,14 @@ class Player(Client):
         pause_icon = pause_icon.resize((25, 25))
         pause_icon = ImageTk.PhotoImage(pause_icon)
 
-        # f1 = Frame(self.master, height=40, width=65)
-        # f1.pack_propagate(0)
-        # f1.place(x=210, y=650)
-        # self.setup = Button(f1, width=65, height=40, text = '初始化', font=15)
-        # self.setup['command'] = self.setupMovie
-        # self.setup.pack()
-
+        # buttons play, fullscreen and pause
         f1 = Frame(self.master, height=40, width=65)
         f1.pack_propagate(0)  # don't shrink
-        # f.pack()
         f1.place(x=5, y=650)
-        self.setup = Button(f1, width=65, height=40, image=full_icon, text='全屏', font=15, compound=LEFT)
-        self.setup.image = full_icon
-        self.setup['command'] = self.setFullScreen
-        self.setup.pack()
+        self.fullscreen = Button(f1, width=65, height=40, image=full_icon, text='全屏', font=15, compound=LEFT)
+        self.fullscreen.image = full_icon
+        self.fullscreen['command'] = self.setFullScreen
+        self.fullscreen.pack()
 
         f3 = Frame(self.master, height=40, width=65)
         f3.pack_propagate(0)
@@ -192,14 +179,15 @@ class Player(Client):
         self.play['command'] = self.play1
         self.play.pack()
 
-        self.f2 = Frame(self.master, height=40, width=65)
-        self.f2.pack_propagate(0)
-        self.f2.place(x=145, y=650)
-        self.pause = Button(self.f2, width=65, height=40, image=pause_icon, text='暂停', font=15, compound=LEFT)
+        f2 = Frame(self.master, height=40, width=65)
+        f2.pack_propagate(0)
+        f2.place(x=145, y=650)
+        self.pause = Button(f2, width=65, height=40, image=pause_icon, text='暂停', font=15, compound=LEFT)
         self.pause.image = pause_icon
         self.pause['command'] = self.pauseMovie
         self.pause.pack()
 
+        # slider
         f2 = Frame(self.master, height=40, width=800)
         f2.pack_propagate(0)
         f2.place(x=0, y=600)
@@ -209,6 +197,7 @@ class Player(Client):
         self.slider.bind("<ButtonPress>", self.sliderPressEvent)
         self.slider.bind("<ButtonRelease>", self.sliderReleaseEvent)
 
+        # three comboboxes
         f = Frame(self.master, height=40, width=150)
         f.pack_propagate(0)
         f.place(x=215, y=650)
@@ -235,6 +224,7 @@ class Player(Client):
         self.quality_combobox.pack(fill=BOTH, expand=1)
         self.quality_combobox.bind("<<ComboboxSelected>>", self.qualityControl)
 
+        # search part
         f = Frame(self.master, height=30, width=50)
         f.pack_propagate(0)
         f.place(x=820, y=5)
@@ -280,36 +270,22 @@ class Player(Client):
         self.historylist.pack()
         self.historylist.bind('<Double-Button-1>', self.pickMovie)
 
+        # label that displays video
         self.label_frame = Frame(self.master, height=600, width=800)
         self.label_frame.pack_propagate(0)
         self.label_frame.place(x=5, y=5)
         self.label = Label(self.label_frame, width=800, height=600, bg='black')
-        # self.label['text'] = ''
-        # self.label['fg'] = 'red'
-        # self.label['anchor'] = S
-        # self.label['compound'] = TOP
-
         self.label.pack(fill=BOTH, expand=1)
 
+        # subtitle blackboard, also displays some messages
         self.subtitle_frame = Frame(self.master, height=50, width=800)
         self.subtitle_frame.pack_propagate(0)
         self.subtitle_frame.place(x=5, y=555)
         self.subtitlebg = Label(self.subtitle_frame, width=800, height=50, bg='black', fg='white')
         self.subtitlebg.pack(fill=BOTH, expand=1)
 
-        # mycanvas = Canvas(self.master, width=600, height=150, bd=0, highlightthickness=0)
-        # mycanvas.create_rectangle(0, 0, 100, 40, fill="green")
-        # #mycanvas.pack(side="top", fill="both", expand=True)
-        # mycanvas.place(x=100, y=200)
-        # # mycanvas.config(bg='')
-        # text_canvas = mycanvas.create_text(10, 10, anchor="nw")
-        # mycanvas.itemconfig(text_canvas, text="Look no background! Thats new!")
-
-
         self.getCategoryList()
         self.refreshPlayList()
-
-        # self.fnt = ImageFont.truetype("C:\Windows\Fonts\simsun.ttc", 18)
 
     def key_press(self, event):
         if event.keysym == 'p':
@@ -323,6 +299,7 @@ class Player(Client):
             else:
                 self.exitFullScreen()
 
+    # enter and exit full screen mode
     def setFullScreen(self):
         self.full_screen = True
         self.master.attributes("-fullscreen", True)
@@ -330,10 +307,6 @@ class Player(Client):
         self.label_frame.place(x=0, y=0)
         self.subtitle_frame.configure(width=self.full_width)
         self.subtitle_frame.place(x=0, y=self.full_height-50)
-        # try:
-        #     self.updateFrame(self.video_frame_queue.queue[self.video_frame_queue.start_ptr-1][0])
-        # except:
-        #     pass
 
     def exitFullScreen(self):
         self.full_screen = False
@@ -342,26 +315,21 @@ class Player(Client):
         self.label_frame.place(x=5, y=5)
         self.subtitle_frame.configure(width=self.origin_width)
         self.subtitle_frame.place(x=5, y=self.origin_height-45)
-        # try:
-        #     self.updateFrame(self.video_frame_queue.queue[self.video_frame_queue.start_ptr-1][0])
-        # except:
-        #     pass
 
+    # pick a movie to start when double clicking a list item
     def pickMovie(self, event):
         self.memory = ''
         index = event.widget.curselection()[0]
         movie_name = event.widget.get(index)
         if movie_name != self.movie_name:
             self.setupMovie(movie_name)
-        else:
-            print("nan")
 
-
+    # initializes a new movie session
     def initNewMovie(self):
         self.buffering = False
         self.buffer_control = False
-        self.video_frame_queue = FrameQueue(2000)
-        self.audio_frame_queue = FrameQueue(2000)
+        self.video_frame_queue = FrameQueue(1500)
+        self.audio_frame_queue = FrameQueue(1500)
         self.subtitle = {}
         self.has_subtitle = 0
         self.last_frame_no = 0
@@ -375,6 +343,7 @@ class Player(Client):
         threading.Thread(target=self.updateMovie).start()
         print("started new")
 
+    # three functions that collect video/audio/subtitle data
     def collectVideoFrame(self, image, frame_no):
         self.video_frame_queue.push(image, frame_no)
 
@@ -383,18 +352,16 @@ class Player(Client):
 
     def collectSubtitle(self, subtitle, subtitle_no):
         subtitle_info = subtitle.decode('utf-8').split('\n', 1)
-        # for i in range(subtitle_no, subtitle_no+int(subtitle_info[0])):
-        #     self.subtitle[i] = subtitle_info[1]
         self.subtitle[subtitle_no] = subtitle_info[1]
         self.subtitle[subtitle_no+int(subtitle_info[0])] = ''
 
+    # four functions that judges whether buffer satisfies some condition
     def needBuffering(self):
-        video_need = self.video_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count - 1
-        audio_need = self.audio_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count - 1
+        video_need = self.video_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count
+        audio_need = self.audio_frame_queue.isEmpty() and self.cur_frame != self.video_frame_count
         return video_need or audio_need
 
     def endBuffering(self):
-        # print(self.audio_frame_queue.last(), self.video_frame_queue.last())
         video_end = self.video_frame_queue.reachThresh() or \
                     self.video_frame_queue.last() == self.video_frame_count - 1
         audio_end = self.audio_frame_queue.reachThresh() or \
@@ -411,8 +378,8 @@ class Player(Client):
         audio_safe = self.audio_frame_queue.safeNow()
         return video_safe and audio_safe
 
+    # Update the image file as video frame in the GUI.
     def updateFrame(self, img, content=''):
-        """Update the image file as video frame in the GUI."""
         l = len(img)
         try:
             img = Image.open(io.BytesIO(img))
@@ -421,12 +388,6 @@ class Player(Client):
             return
         w = img.size[0]
         h = img.size[1]
-        # if not self.full_screen:
-        #     nh = self.origin_height
-        #     nw = self.origin_width
-        # else:
-        #     nw = self.full_width
-        #     nh = self.full_height - 100
         nw = self.label_frame.winfo_width()
         nh = self.label_frame.winfo_height()
         if w * 3 > h * 4:
@@ -434,35 +395,22 @@ class Player(Client):
         else:
             new_size = (nh * w // h, nh)
         img = img.resize(new_size)
-        # try:
-        #     if content != '':
-        #
-        #         draw = ImageDraw.Draw(img)
-        #         width, height = img.size
-        #         text_size = draw.textsize(content, font=self.fnt)
-        #         draw.text((width // 2 - text_size[0] // 2, height - text_size[1]), content, fill="#ffffff", font=self.fnt)
-        # except:
-        #     pass
         photo = ImageTk.PhotoImage(img)
         self.label.configure(image=photo, height=img.size[1])
         self.label.image = photo
 
-    @qt_exception_wrapper
+    # thread that updates video/audio/subtitle
     def updateMovie(self):
-        print("updateMovie")
         try:
             while True:
+                # play reaches an end
                 if self.play_end:
                     break
                 start = time.time()
-                # print(start)
-                print(self.video_frame_queue.length)
                 if self.bufferAlmostFull():
                     self.sendRtspRequest(self.SET_PARAMETER, 'buffer_full', 'true')
-                    print("control")
                     self.buffer_control = True
                 if self.buffer_control and self.bufferNowSafe():
-                    print("control over")
                     self.sendRtspRequest(self.SET_PARAMETER, 'buffer_full', 'false')
                     self.buffer_control = False
                 if self.state == self.PLAYING:
@@ -542,24 +490,28 @@ class Player(Client):
             pass
         # self.sendRtspRequest(self.TEARDOWN)
 
-    @qt_exception_wrapper
     def sliderPressEvent(self, event):
+        if self.slider['state'] == 'disabled':
+            return
         self.pauseMovie()
 
-    @qt_exception_wrapper
     def sliderReleaseEvent(self, event):
+        if self.slider['state'] == 'disabled':
+            return
         self.video_frame_queue.jump()
         self.audio_frame_queue.jump()
         total = 100
         cur = self.slider.get()
         time_total = self.video_frame_count - 1
         time_cur = time_total * cur // total
-        print(time_cur)
         self.cur_frame = time_cur
-
         self.playMovie(time_cur)
 
-    @qt_exception_wrapper
+    def setSliderPosition(self, frame_no):
+        # value = self.frameNbr * self.Slider.maximum() // self.video_frame_count
+        value = frame_no * 100 // (self.video_frame_count - 1)
+        self.slider.set(value)
+
     def play1(self):
         if self.subtitlebg['text'] == '资源加载完成。':
             self.subtitlebg['text'] = ''
@@ -569,16 +521,7 @@ class Player(Client):
         else:
             self.playMovie()
 
-    @qt_exception_wrapper
-    def pause(self):
-        self.pauseMovie()
-
-    @qt_exception_wrapper
-    def setSliderPosition(self, frame_no):
-        # value = self.frameNbr * self.Slider.maximum() // self.video_frame_count
-        value = frame_no * 100 // (self.video_frame_count - 1)
-        self.slider.set(value)
-
+    # send command to control video quality
     def qualityControl(self, event):
         self.quality = int(self.speed_combobox.current())
         if self.quality == 0:
@@ -588,12 +531,8 @@ class Player(Client):
         else:
             self.sendRtspRequest(self.SET_PARAMETER, 'compress', '4')
 
-    @qt_exception_wrapper
+    # calculate true time delay according to play speed
     def calculate_true_time_delay(self, event):
-        """
-        calculate true time delay according to play speed
-        :return: None
-        """
         self.play_speed = int(self.speed_combobox.current())
         if self.play_speed == 0:
             self.rate = 1
@@ -605,6 +544,7 @@ class Player(Client):
             self.rate = 0.5
             self.modified_time_delay = round(2 / self.video_fps, 3)
 
+    # refresh playlist
     def refreshPlayList(self, keyword=''):
         if self.playlist.size() > 0:
             self.playlist.delete(0, self.playlist.size()-1)
@@ -615,22 +555,19 @@ class Player(Client):
             self.playlist.insert(i, movie)
             i += 1
 
+    # get category list
     def getCategoryList(self):
         category_list = self.retrievePlayList('CATEGORY')
         category_list.append('所有')
         self.category_combobox['values'] = tuple(category_list)
         self.category_combobox.current(len(category_list)-1)
 
+    # Handler on explicitly closing the GUI window.
     def handler(self):
-        """Handler on explicitly closing the GUI window."""
         self.pauseMovie()
         if tkMessageBox.askokcancel("提示", "确定要退出吗？"):
             self.exitClient()
-        else: # When the user presses cancel, resume playing.
+        else:
             self.playMovie()
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    player = Player('127.0.0.1', 10001, 10002, 'test.jpg')
-    sys.exit(app.exec_())

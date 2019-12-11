@@ -1,26 +1,11 @@
 import time
 import os
-from PyQt5.QtWidgets import QMessageBox
 import socket
 import threading
 from audio_player import AudioPlayer
 from RtpPacket import RtpPacket
 import tkinter.messagebox as tkMessageBox
 from subtitle import Subtitle
-
-from PyQt5.QtWidgets import QMessageBox
-
-
-
-def qt_exception_wrapper(func):
-    def wrapper(self, *args, **kwargs):
-        try:
-            func(self, *args, **kwargs)
-        except Exception as e:
-            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
-                QMessageBox.Yes, QMessageBox.Yes)
-    return wrapper
-
 
 
 class Client:
@@ -37,7 +22,7 @@ class Client:
     SET_PARAMETER = 5
 
     # Initiation..
-    def __init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port, movie_name):
+    def __init__(self, server_addr, server_rtsp_port, server_plp_port, rtp_port, plp_port):
 
         # get addr and ports
         self.server_addr = server_addr
@@ -53,7 +38,7 @@ class Client:
         self.rtsp_running = False
 
         # current video and audio parameters
-        self.movie_name = movie_name
+        self.movie_name = ''
         self.packet_data = b''
         self.frameNbr = 0
         self.video_frame_no = 0
@@ -95,7 +80,6 @@ class Client:
         plp_socket.close()
         return play_list
 
-    @qt_exception_wrapper
     def setupMovie(self, movie_name='test.mp4'):
         """Setup button handler."""
         if self.rtsp_running and self.state == self.INIT:
@@ -133,7 +117,7 @@ class Client:
             self.subtitlebg['text'] = '正在载入资源...'
             self.sendRtspRequest(self.SETUP, movie_name)
 
-    @qt_exception_wrapper
+
     def exitClient(self):
 
 
@@ -161,13 +145,13 @@ class Client:
             self.master.destroy()  # Close the gui window
 
 
-    @qt_exception_wrapper
+
     def pauseMovie(self):
         """Pause button handler."""
         if self.state == self.PLAYING:
             self.sendRtspRequest(self.PAUSE)
 
-    @qt_exception_wrapper
+
     def playMovie(self, pos=-1):
         """Play button handler."""
         if self.state == self.READY:
@@ -180,7 +164,7 @@ class Client:
             else:
                 self.sendRtspRequest(self.PLAY, pos)
 
-    @qt_exception_wrapper
+
     def listenRtp(self):
         """Listen for RTP packets."""
         while True:
@@ -234,7 +218,7 @@ class Client:
                     self.teardownAcked = 0
                     break
 
-    @qt_exception_wrapper
+
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""
         self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -244,7 +228,7 @@ class Client:
         except Exception as e:
             print(str(e))
 
-    @qt_exception_wrapper
+
     def sendRtspRequest(self, requestCode, *args):
         """Send RTSP request to the server."""
 
@@ -328,7 +312,7 @@ class Client:
         self.rtspSocket.send(request.encode())
         print("end")
 
-    @qt_exception_wrapper
+
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
         while True:
@@ -357,7 +341,7 @@ class Client:
                 break
         self.rtsp_running = False
 
-    @qt_exception_wrapper
+
     def parseRtspReply(self, data):
         """Parse the RTSP reply from the server."""
         lines = str(data).split('\n')
@@ -413,7 +397,7 @@ class Client:
                         # Flag the teardownAcked to close the socket.
                         self.teardownAcked = 1
 
-    @qt_exception_wrapper
+
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""
         # Create a new datagram socket to receive RTP packets from the server

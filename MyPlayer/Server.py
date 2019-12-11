@@ -2,11 +2,12 @@ import socket
 from RtpPacket import RtpPacket
 import time
 import threading
-from extract_frame import VideoCapturer, SubtitleExtractor
+from video_extractor import VideoCapturer
 from audio_player import AudioCapturer
 import ctypes
 from subtitle import Subtitle
 
+# set time.sleep() accuracy
 winmm = ctypes.WinDLL('winmm')
 winmm.timeBeginPeriod(1)
 

@@ -18,7 +18,7 @@ def main(tk):
     sys.excepthook = exception_hook
     time.sleep(1)
     # app = QApplication(sys.argv)
-    player = Player(tk, '127.0.0.1', 10001, 22233, 10004, 10005, 'test.mp4')
+    player = Player(tk, '127.0.0.1', 10001, 22233, 10004, 10005)
     # sys.exit(app.exec_())
 
 
